@@ -14,7 +14,26 @@ import (
 	"nepkey/pkg/config"
 )
 
+// appVersionStr is stamped at build time from the VERSION file:
+// go build -ldflags "-X nepkey/pkg/ibus.appVersionStr=$(cat VERSION)"
+var appVersionStr = "dev"
+
+// appVersion returns the release version stamped at build time.
+func appVersion() string {
+	if appVersionStr == "" {
+		return "dev"
+	}
+	return appVersionStr
+}
+
 var engineCounter uint64
+
+// engineEnabledByDefault reports whether a freshly spawned engine starts
+// with Vietnamese processing on: only the "nepkey" engine does, while
+// "nepkey-en" is a pure English passthrough (top-bar E indicator).
+func engineEnabledByDefault(name string) bool {
+	return name != "nepkey-en"
+}
 
 // EnsureIBusAddress ensures IBUS_ADDRESS environment variable is set
 func EnsureIBusAddress() string {
@@ -63,7 +82,7 @@ func MakeComponent() *ibus.Component {
 	comp := ibus.NewComponent(
 		"org.freedesktop.IBus.NepKey",
 		"NepKey Vietnamese Input Method",
-		"1.0.0",
+		appVersion(),
 		"GPL-3.0",
 		"NepKey Contributors",
 		"https://github.com/todo-laterx/nepkey",
@@ -73,20 +92,37 @@ func MakeComponent() *ibus.Component {
 
 	engineDesc := ibus.SmallEngineDesc(
 		"nepkey",
-		"NepKey (Tiếng Việt)",
-		"Bộ gõ tiếng Việt NepKey cho Linux",
+		"NepKey",
+		"Bộ gõ tiếng Việt",
 		"vi",
 		"GPL-3.0",
 		"NepKey Contributors",
-		"/usr/share/icons/nepkey/nepkey.svg",
+		"/usr/share/icons/nepkey/nepkey-v.svg",
 		"us",
 		"/usr/bin/nepkey-settings",
-		"1.0.0",
+		appVersion(),
 	)
 	engineDesc.Rank = 99
 	engineDesc.Symbol = "V"
 
 	comp.AddEngine(engineDesc)
+
+	engineDescEn := ibus.SmallEngineDesc(
+		"nepkey-en",
+		"NepKey",
+		"NepKey English passthrough",
+		"en",
+		"GPL-3.0",
+		"NepKey Contributors",
+		"/usr/share/icons/nepkey/nepkey-e.svg",
+		"us",
+		"/usr/bin/nepkey-settings",
+		appVersion(),
+	)
+	engineDescEn.Rank = 99
+	engineDescEn.Symbol = "E"
+
+	comp.AddEngine(engineDescEn)
 	return comp
 }
 
@@ -105,6 +141,11 @@ func RunServer(cfg *config.Config, standalone bool) error {
 		path := dbus.ObjectPath(fmt.Sprintf("/org/freedesktop/IBus/Engine/NepKey/%d", id))
 
 		engine := NewNepKeyEngine(c, path, cfg)
+		engine.engineName = engineName
+		if !engineEnabledByDefault(engineName) {
+			engine.enabled = false
+			engine.eng.SetEnabled(false)
+		}
 		ibus.PublishEngine(c, path, engine)
 		log.Printf("[NepKey IBus] Created engine instance #%d at %s", id, path)
 		return path

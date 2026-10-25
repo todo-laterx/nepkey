@@ -27,6 +27,8 @@ const (
 	IBusKeyEscape    uint32 = 0xff1b
 	IBusKeySpace     uint32 = 0x0020
 	IBusKeyKPEnter   uint32 = 0xff8d
+	IBusKeyShiftL    uint32 = 0xffe1
+	IBusKeyShiftR    uint32 = 0xffe2
 
 	IBusKeyLeft  uint32 = 0xff51
 	IBusKeyUp    uint32 = 0xff52
@@ -87,8 +89,10 @@ type NepKeyEngine struct {
 	correctionDeletes    int      // surrounding-text deletions requested (observable in tests)
 	bsKeycode            uint32   // keycode for synthetic BackSpace, learned from real events
 	clientCaps           uint32   // IBus capabilities reported by the focused client
+	engineName           string   // "nepkey" (Vietnamese) or "nepkey-en" (English passthrough)
 	wordFastPath         bool     // latched at word start: fast-path for the whole word or not
 	restoreCommits       int      // prefix restores after preedit abandon (observable in tests)
+	switchRequests       []string // SetGlobalEngine targets requested (observable in tests)
 	commitLog            []string // every non-empty commit request (observable in tests)
 	preeditHides         int      // HidePreeditText requests (observable in tests)
 }
@@ -320,10 +324,17 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 		return false, nil
 	}
 
-	// 3. Shortcuts (Ctrl, Alt, Super held down with normal keys): commit buffer & pass through
+	// 3. Shortcuts (Ctrl, Alt, Super held down with normal keys): commit buffer & pass through.
+	// The configured V/E toggle (default Ctrl+Space) additionally swaps the
+	// active engine so the top-bar indicator flips between V and E.
 	if (state & (IBusControlMask | IBusMod1Mask | IBusSuperMask)) != 0 {
 		e.setRawMode(false)
 		e.atWordBoundary = true
+		if e.matchToggle(state, keyval) {
+			e.commitBuffer()
+			e.switchEngine()
+			return true, nil
+		}
 		e.commitBuffer()
 		return false, nil
 	}
@@ -720,6 +731,43 @@ func (e *NepKeyEngine) Disable() *dbus.Error {
 	e.commitBuffer()
 	e.enabled = false
 	return nil
+}
+
+// otherEngineName returns the sibling engine to switch to on toggle.
+func (e *NepKeyEngine) otherEngineName() string {
+	if e.engineName == "nepkey-en" {
+		return "nepkey"
+	}
+	return "nepkey-en"
+}
+
+// matchToggle reports whether this shortcut is the configured V/E toggle
+// ("Ctrl+Space", "Alt+Shift" or "Ctrl+Shift").
+func (e *NepKeyEngine) matchToggle(state uint32, keyval uint32) bool {
+	toggle := e.cfg.ToggleKey
+	hasCtrl := state&IBusControlMask != 0
+	hasAlt := state&IBusMod1Mask != 0
+	isShift := keyval == IBusKeyShiftL || keyval == IBusKeyShiftR
+	switch toggle {
+	case "Alt+Shift":
+		return hasAlt && isShift
+	case "Ctrl+Shift":
+		return hasCtrl && isShift
+	default: // "Ctrl+Space"
+		return hasCtrl && keyval == IBusKeySpace
+	}
+}
+
+// switchEngine asks IBus to activate the sibling engine so the top-bar
+// indicator flips between V (nepkey-v icon) and E (nepkey-e icon).
+// With nil conn (unit tests) only the observable request is recorded.
+func (e *NepKeyEngine) switchEngine() {
+	target := e.otherEngineName()
+	e.switchRequests = append(e.switchRequests, target)
+	if e.conn != nil {
+		obj := e.conn.Object("org.freedesktop.IBus", "/org/freedesktop/IBus")
+		obj.Call("org.freedesktop.IBus.SetGlobalEngine", 0, target)
+	}
 }
 
 // SetCapabilities records what the focused client supports (surrounding

@@ -4,7 +4,7 @@
 <component>
     <name>org.freedesktop.IBus.NepKey</name>
     <description>NepKey Vietnamese Input Method</description>
-    <version>1.0.0</version>
+    <version>1.2.0</version>
     <license>GPL-3.0</license>
     <author>NepKey Contributors</author>
     <homepage>https://github.com/todo-laterx/nepkey</homepage>
@@ -13,17 +13,31 @@
     <engines>
         <engine>
             <name>nepkey</name>
-            <longname>NepKey (Tiếng Việt)</longname>
-            <description>Bộ gõ tiếng Việt NepKey cho Linux</description>
+            <longname>NepKey</longname>
+            <description>Bộ gõ tiếng Việt</description>
             <language>vi</language>
             <license>GPL-3.0</license>
             <author>NepKey Contributors</author>
-            <icon>/usr/share/icons/nepkey/nepkey.svg</icon>
+            <icon>/usr/share/icons/nepkey/nepkey-v.svg</icon>
             <layout>us</layout>
             <rank>99</rank>
             <symbol>V</symbol>
             <setup>/usr/bin/nepkey-settings</setup>
-            <version>1.0.0</version>
+            <version>1.2.0</version>
+        </engine>
+        <engine>
+            <name>nepkey-en</name>
+            <longname>NepKey</longname>
+            <description>NepKey English passthrough</description>
+            <language>en</language>
+            <license>GPL-3.0</license>
+            <author>NepKey Contributors</author>
+            <icon>/usr/share/icons/nepkey/nepkey-e.svg</icon>
+            <layout>us</layout>
+            <rank>99</rank>
+            <symbol>E</symbol>
+            <setup>/usr/bin/nepkey-settings</setup>
+            <version>1.2.0</version>
         </engine>
     </engines>
 </component>

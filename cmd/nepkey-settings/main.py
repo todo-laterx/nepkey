@@ -16,6 +16,15 @@ from gi.repository import Adw, Gtk, Gio, GLib
 
 CONFIG_DIR = os.path.expanduser("~/.config/nepkey")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.yaml")
+
+APP_VERSION = "__NEPKEY_VERSION__"
+if APP_VERSION.startswith("__NEPKEY"):
+    try:
+        _vf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "VERSION")
+        with open(_vf, encoding="utf-8") as _f:
+            APP_VERSION = _f.read().strip() or "dev"
+    except Exception:
+        APP_VERSION = "dev"
 MACRO_FILE = os.path.join(CONFIG_DIR, "macros.yaml")
 
 DEFAULT_CONFIG = {
@@ -100,8 +109,8 @@ def save_macros(macros):
 class NepKeySettingsWindow(Adw.PreferencesWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Cài đặt NepKey")
-        self.set_default_size(840, 760)
-        self.set_size_request(640, 560)
+        self.set_default_size(720, 640)
+        self.set_size_request(600, 520)
         self.cfg = load_config()
         self.macros = load_macros()
 
@@ -179,10 +188,22 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         grp_startup.add(self.row_enabled)
 
         page.add(grp_startup)
+
+        # Group 3: Experimental
+        grp_exp = Adw.PreferencesGroup(title="Tính năng thử nghiệm", description="Áp dụng ngay không cần khởi động lại")
+        self.row_ascii_fast = Adw.SwitchRow(
+            title="Chữ ASCII chuyển tiếp nhanh",
+            subtitle="Enter/Tab ăn gợi ý thanh địa chỉ trong 1 lần bấm (Chrome, ô nhập GTK)"
+        )
+        self.row_ascii_fast.set_active(self.cfg.get("ascii_fast_path", False))
+        self.row_ascii_fast.connect("notify::active", self.on_setting_changed)
+        grp_exp.add(self.row_ascii_fast)
+
+        page.add(grp_exp)
         self.add(page)
 
     def build_tone_page(self):
-        page = Adw.PreferencesPage(title="Dấu &amp; Sửa lỗi", icon_name="preferences-desktop-font-symbolic")
+        page = Adw.PreferencesPage(title="Dấu & Sửa lỗi", icon_name="preferences-desktop-font-symbolic")
 
         # Group: Quy tắc bỏ dấu
         grp_tone = Adw.PreferencesGroup(title="Quy tắc bỏ dấu thanh", description="Tiêu chuẩn vị trí đặt dấu trong tiếng Việt")
@@ -206,7 +227,7 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         page.add(grp_tone)
 
         # Group: Chính tả
-        grp_spell = Adw.PreferencesGroup(title="Kiểm tra &amp; Tự động sửa lỗi", description="Khôi phục trạng thái chuẩn khi gõ sai từ")
+        grp_spell = Adw.PreferencesGroup(title="Kiểm tra và tự động sửa lỗi", description="Khôi phục trạng thái chuẩn khi gõ sai từ")
         self.row_auto_correct = Adw.SwitchRow(
             title="Tự động kiểm tra chính tả",
             subtitle="Tự động hủy bỏ dấu nếu từ gõ không tuân theo quy tắc chính tả tiếng Việt"
@@ -312,9 +333,15 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         box_hero.set_margin_top(20)
         box_hero.set_margin_bottom(24)
 
-        # Large vector icon (128px)
-        img_logo = Gtk.Image.new_from_icon_name("nepkey")
-        img_logo.set_pixel_size(128)
+        # Large vector icon (file fallback: user-local theme lookup can miss)
+        logo_path = os.path.join(os.path.expanduser("~/.local/share/icons/nepkey"), "nepkey.svg")
+        if not os.path.exists(logo_path):
+            logo_path = "/usr/share/icons/nepkey/nepkey.svg"
+        if os.path.exists(logo_path):
+            img_logo = Gtk.Image.new_from_file(logo_path)
+        else:
+            img_logo = Gtk.Image.new_from_icon_name("nepkey")
+        img_logo.set_pixel_size(96)
         box_hero.append(img_logo)
 
         # Title
@@ -323,13 +350,13 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         box_hero.append(lbl_title)
 
         # Subtitle / Version
-        lbl_version = Gtk.Label(label="Phiên bản 1.0.0 • Native IBus Engine")
+        lbl_version = Gtk.Label(label=f"Phiên bản {APP_VERSION} • Native IBus Engine")
         lbl_version.add_css_class("title-4")
         lbl_version.add_css_class("dim-label")
         box_hero.append(lbl_version)
 
         # Tagline
-        lbl_desc = Gtk.Label(label="Bộ gõ tiếng Việt tối ưu chuyên biệt cho Lập trình viên, Terminal, Chat AI và Trình duyệt web")
+        lbl_desc = Gtk.Label(label="Bộ gõ tiếng Việt cho lập trình viên và duyệt web")
         lbl_desc.add_css_class("body")
         box_hero.append(lbl_desc)
 
@@ -340,29 +367,29 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         grp_features = Adw.PreferencesGroup(title="Đặc điểm nổi bật")
 
         row1 = Adw.ActionRow(
-            title="Tối ưu Chat AI &amp; Terminal (Slash Commands)",
-            subtitle="Hỗ trợ gõ lệnh / mượt mà trên Claude, ChatGPT, Slack, Discord, VS Code; phím Enter gửi ngay lập tức với 1 lần nhấn (0ms)"
+            title="Chat AI và Terminal",
+            subtitle="Gõ lệnh / tự nhiên, Enter 1 lần gửi ngay"
         )
         row1.add_prefix(Gtk.Image.new_from_icon_name("utilities-terminal-symbolic"))
         grp_features.add(row1)
 
         row2 = Adw.ActionRow(
-            title="Nhập URL &amp; Link Web chuẩn xác",
-            subtitle="Tự động phân tách dấu chấm (.), (/), (-) trên thanh địa chỉ trình duyệt và dòng lệnh, không làm biến dạng đường dẫn"
+            title="URL, đường dẫn",
+            subtitle="Không biến dạng link khi gõ"
         )
         row2.add_prefix(Gtk.Image.new_from_icon_name("network-wired-symbolic"))
         grp_features.add(row2)
 
         row3 = Adw.ActionRow(
-            title="Điều hướng con trỏ thông minh",
-            subtitle="Tự động chốt từ tức thì khi dùng phím mũi tên (← →), Home, End, loại bỏ hoàn toàn lỗi lặp chữ trên Wayland &amp; X11"
+            title="Điều hướng thông minh",
+            subtitle="Hết lỗi lặp chữ khi dùng ← → Home End"
         )
         row3.add_prefix(Gtk.Image.new_from_icon_name("input-keyboard-symbolic"))
         grp_features.add(row3)
 
         row4 = Adw.ActionRow(
-            title="Lõi Bamboo Core &amp; Gõ tắt Macro",
-            subtitle="Xử lý tiếng Việt chuẩn xác (Telex 2, Telex, VNI), tự động đặt dấu thông minh và quản lý macro viết tắt linh hoạt"
+            title="Bamboo Core, Macro",
+            subtitle="Telex 2 / Telex / VNI, gõ tắt YAML"
         )
         row4.add_prefix(Gtk.Image.new_from_icon_name("preferences-desktop-font-symbolic"))
         grp_features.add(row4)
@@ -411,6 +438,7 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         self.cfg["free_tone_marking"] = self.row_free_tone.get_active()
         self.cfg["auto_correct"] = self.row_auto_correct.get_active()
         self.cfg["macro_enabled"] = self.row_macro_enabled.get_active()
+        self.cfg["ascii_fast_path"] = self.row_ascii_fast.get_active()
 
         save_config(self.cfg)
         self.notify_daemon()

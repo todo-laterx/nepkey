@@ -8,6 +8,8 @@
 [![Go](https://img.shields.io/badge/Go-1.27-blue.svg)](go.mod)
 [![Platform](https://img.shields.io/badge/Platform-Ubuntu%20GNOME%20Wayland%2FX11-lightgrey.svg)](scripts/install.sh)
 
+> **Cam kết tương thích:** gõ tiếng Việt tự nhiên như bàn phím thường trên trình duyệt (Chrome/Firefox Omnibox, Chat AI), mọi app (VS Code, Slack, Discord, Electron) và terminal (Wayland/X11) — phím `/` và lệnh gạch chéo chạy chuẩn, không nuốt ký tự, không kẹt gợi ý.
+
 ---
 
 ## Vì sao khác biệt so với ibus-bamboo / ibus-unikey
@@ -116,14 +118,17 @@ Sau khi chạy xong:
 
 ```bash
 bash scripts/build-deb.sh
-sudo dpkg -i dist/nepkey_1.0.0_amd64.deb
+sudo dpkg -i dist/nepkey_1.2.0_amd64.deb
 ```
 
-File `.deb` release cũng được đính kèm trong GitHub Releases từ tag `v1.0.0` trở đi.
+File `.deb` release cũng được đính kèm trong GitHub Releases trong GitHub Releases (bản mới nhất).
 
 ---
 
 ## Phím tắt & Thao tác
+
+- **`Ctrl+Space`** (tùy chỉnh `Alt+Shift` / `Ctrl+Shift` qua `toggle_key`): chuyển giữa chế độ gõ Việt (top bar hiện V) và chế độ tiếng Anh (top bar hiện E). Chế độ tiếng Anh cho mọi phím đi thẳng, không xử lý dấu.
+- **`Super + Space`**: chuyển nguồn nhập của GNOME (NepKey Việt / NepKey Anh / English).
 
 - **`Super + Space`**: Chuyển đổi giữa bàn phím tiếng Anh và tiếng Việt qua hệ thống IBus.
 - **`nepkey-settings`**: Mở cửa sổ cấu hình giao diện GTK4 / Libadwaita.

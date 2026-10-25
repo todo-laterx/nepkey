@@ -4,7 +4,7 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DIR"
 
-VERSION="1.1.0"
+VERSION="$(tr -d '[:space:]' < "$DIR/VERSION")"
 ARCH="amd64"
 PKG_DIR="build/deb"
 DEB_NAME="nepkey_${VERSION}_${ARCH}.deb"
@@ -23,15 +23,15 @@ mkdir -p "$PKG_DIR/usr/share/ibus/component"
 
 # 2. Biên dịch nhị phân IBus
 echo "Compiling optimized binary..."
-go build -ldflags="-s -w" -o "$PKG_DIR/usr/bin/nepkey-ibus" ./cmd/nepkey-ibus
+go build -ldflags="-s -w -X nepkey/pkg/ibus.appVersionStr=${VERSION}" -o "$PKG_DIR/usr/bin/nepkey-ibus" ./cmd/nepkey-ibus
 chmod 755 "$PKG_DIR/usr/bin/nepkey-ibus"
 
 # Cài đặt IBus Component XML
-cp assets/nepkey.xml "$PKG_DIR/usr/share/ibus/component/nepkey.xml"
+sed -e "s|<version>[^<]*</version>|<version>${VERSION}</version>|g" assets/nepkey.xml > "$PKG_DIR/usr/share/ibus/component/nepkey.xml"
 chmod 644 "$PKG_DIR/usr/share/ibus/component/nepkey.xml"
 
 # Cài đặt giao diện cài đặt NepKey Settings (GTK4 + Libadwaita)
-cp cmd/nepkey-settings/main.py "$PKG_DIR/usr/bin/nepkey-settings"
+sed -e "s|__NEPKEY_VERSION__|${VERSION}|g" cmd/nepkey-settings/main.py > "$PKG_DIR/usr/bin/nepkey-settings"
 chmod 755 "$PKG_DIR/usr/bin/nepkey-settings"
 
 # 3. Sao chép file cấu hình mẫu & macros

@@ -4,11 +4,13 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DIR"
 
+VERSION="$(tr -d '[:space:]' < "$DIR/VERSION")"
+
 echo "=== Cài đặt NepKey IBus ==="
 
 # 1. Biên dịch ứng dụng IBus
 echo "--> Đang biên dịch NepKey IBus..."
-go build -ldflags="-s -w" -o nepkey-ibus ./cmd/nepkey-ibus
+go build -ldflags="-s -w -X nepkey/pkg/ibus.appVersionStr=${VERSION}" -o nepkey-ibus ./cmd/nepkey-ibus
 
 # 2. Cài đặt binary vào ~/.local/bin
 mkdir -p "$HOME/.local/bin"
@@ -16,7 +18,7 @@ cp -f nepkey-ibus "$HOME/.local/bin/nepkey-ibus"
 chmod +x "$HOME/.local/bin/nepkey-ibus"
 rm -f nepkey-ibus
 
-cp -f cmd/nepkey-settings/main.py "$HOME/.local/bin/nepkey-settings"
+sed -e "s|__NEPKEY_VERSION__|${VERSION}|g" cmd/nepkey-settings/main.py > "$HOME/.local/bin/nepkey-settings"
 chmod +x "$HOME/.local/bin/nepkey-settings"
 echo "✓ Đã cài đặt binary vào $HOME/.local/bin/"
 
@@ -31,10 +33,17 @@ if [ ! -f "$HOME/.config/nepkey/macros.yaml" ]; then
     echo "✓ Đã khởi tạo bảng gõ tắt tại $HOME/.config/nepkey/macros.yaml"
 fi
 
-# 4. Cài đặt biểu tượng Vector SVG
+# 4. Cài đặt biểu tượng Vector SVG (đường dẫn tuyệt đối cho IBus + theme hicolor cho GTK/GNOME)
 mkdir -p "$HOME/.local/share/icons/nepkey"
 cp assets/icons/*.svg "$HOME/.local/share/icons/nepkey/"
-echo "✓ Đã cài đặt icons vào $HOME/.local/share/icons/nepkey/"
+mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
+cp assets/icons/nepkey.svg "$HOME/.local/share/icons/hicolor/scalable/apps/"
+cp assets/icons/nepkey-v.svg "$HOME/.local/share/icons/hicolor/scalable/apps/"
+cp assets/icons/nepkey-e.svg "$HOME/.local/share/icons/hicolor/scalable/apps/"
+if command -v gtk-update-icon-cache > /dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f "$HOME/.local/share/icons/hicolor" || true
+fi
+echo "✓ Đã cài đặt icons vào $HOME/.local/share/icons/"
 
 # 5. Cài đặt menu desktop
 mkdir -p "$HOME/.local/share/applications"
@@ -47,6 +56,7 @@ mkdir -p "$IBUS_COMP_DIR"
 sed -e "s|/usr/bin/nepkey-ibus|$HOME/.local/bin/nepkey-ibus|g" \
     -e "s|/usr/bin/nepkey-settings|$HOME/.local/bin/nepkey-settings|g" \
     -e "s|/usr/share/icons/nepkey|$HOME/.local/share/icons/nepkey|g" \
+    -e "s|<version>[^<]*</version>|<version>${VERSION}</version>|g" \
     assets/nepkey.xml > "$IBUS_COMP_DIR/nepkey.xml"
 echo "✓ Đã cài đặt IBus component: $IBUS_COMP_DIR/nepkey.xml"
 

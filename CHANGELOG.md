@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-26
+
+Trong tam: tuong thich go tu nhien tren trinh duyet / app / terminal, phim `/` chay chuan.
+
+- Phim tat chuyen V/E cua NepKey (mac dinh Ctrl+Space, tuy chinh Alt+Shift / Ctrl+Shift trong `toggle_key`): doi engine sang NepKey (Tieng Anh) de thanh top-bar hien E, bam lai ve V.
+- Dang ky 2 engine `nepkey` (V) + `nepkey-en` (E) voi icon nepkey-v.svg / nepkey-e.svg rieng.
+- Settings: sua hien thi `&`, gon trang Gioi thieu, them cong tac ASCII nhanh.
+
 ## [1.1.0] - 2026-10-26
 
 - Them `ascii_fast_path` (mac dinh tat) trong `config.yaml`: chuyen tiep phim ASCII thuan ngay lap tuc, khong giu preedit, giup Enter/Tab an prediction tren Chrome Omnibox trong 1 lan bam; tu dong chuyen sang preedit + xoa vung (surrounding-text, fallback BackSpace) khi xuat hien dau tieng Viet.

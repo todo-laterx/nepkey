@@ -395,3 +395,66 @@ func TestAsciiFastPath_VNIDigitStartStaysLegacy(t *testing.T) {
 		t.Fatalf("expected no correction, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
 	}
 }
+
+func TestToggle_CtrlSpaceSwitchesEngine(t *testing.T) {
+	e := newFastPathEngine()
+	e.engineName = "nepkey"
+	typeRunes(e, "chao")
+	h, _ := e.ProcessKeyEvent(IBusKeySpace, 0, IBusControlMask)
+	if !h {
+		t.Fatalf("expected toggle consumed (true)")
+	}
+	if len(e.switchRequests) != 1 || e.switchRequests[0] != "nepkey-en" {
+		t.Fatalf("expected switch to nepkey-en, got %q", e.switchRequests)
+	}
+	if e.eng.HasBuffer() {
+		t.Fatalf("expected buffer committed on toggle, got %q", e.eng.GetWordBuffer())
+	}
+}
+
+func TestToggle_EngineEnSwitchesBack(t *testing.T) {
+	e := newFastPathEngine()
+	e.engineName = "nepkey-en"
+	h, _ := e.ProcessKeyEvent(IBusKeySpace, 0, IBusControlMask)
+	if !h {
+		t.Fatalf("expected toggle consumed (true)")
+	}
+	if len(e.switchRequests) != 1 || e.switchRequests[0] != "nepkey" {
+		t.Fatalf("expected switch to nepkey, got %q", e.switchRequests)
+	}
+}
+
+func TestToggle_NonToggleShortcutPassesThrough(t *testing.T) {
+	e := newFastPathEngine()
+	e.engineName = "nepkey"
+	h, _ := e.ProcessKeyEvent(uint32('a'), 0, IBusControlMask) // Ctrl+A
+	if h {
+		t.Fatalf("expected Ctrl+A passthrough (false)")
+	}
+	if len(e.switchRequests) != 0 {
+		t.Fatalf("expected no switch, got %q", e.switchRequests)
+	}
+}
+
+func TestToggle_AltShiftMatches(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ToggleKey = "Alt+Shift"
+	e := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test", cfg)
+	e.engineName = "nepkey"
+	h, _ := e.ProcessKeyEvent(IBusKeyShiftL, 0, IBusMod1Mask)
+	if !h {
+		t.Fatalf("expected Alt+Shift consumed (true)")
+	}
+	if len(e.switchRequests) != 1 || e.switchRequests[0] != "nepkey-en" {
+		t.Fatalf("expected switch to nepkey-en, got %q", e.switchRequests)
+	}
+}
+
+func TestEngineEnabledByDefault(t *testing.T) {
+	if !engineEnabledByDefault("nepkey") {
+		t.Fatalf("nepkey must start enabled")
+	}
+	if engineEnabledByDefault("nepkey-en") {
+		t.Fatalf("nepkey-en must start disabled")
+	}
+}
