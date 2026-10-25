@@ -7,7 +7,7 @@
     <version>1.0.0</version>
     <license>GPL-3.0</license>
     <author>NepKey Contributors</author>
-    <homepage>https://github.com/nepkey/nepkey</homepage>
+    <homepage>https://github.com/todo-laterx/nepkey</homepage>
     <exec>/usr/bin/nepkey-ibus --ibus</exec>
     <textdomain>nepkey</textdomain>
     <engines>

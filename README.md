@@ -94,3 +94,5 @@ sudo dpkg -i nepkey_1.0.0_amd64.deb
 
 Dự án được phát hành theo giấy phép mã nguồn mở **GNU General Public License v3.0 (GPL-3.0)**.
 Mã nguồn: [https://github.com/todo-laterx/nepkey](https://github.com/todo-laterx/nepkey)
+
+Tên và logo `NepKey` là thương hiệu của dự án. Mọi fork/redistribute phải giữ nguyên giấy phép GPL-3.0 và ghi công `bamboo-core (MIT)`. Không được dùng tên `NepKey` cho bản fork gây nhầm lẫn mà không được phép.
