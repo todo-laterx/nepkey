@@ -76,6 +76,10 @@ type NepKeyEngine struct {
 	slashCommandLen  int    // number of characters typed in active raw token mode
 	inputPurpose     uint32 // current field input purpose (e.g. password field)
 	inputHints       uint32 // current field input hints
+
+	asciiFastPath        bool // forward pure-ASCII keystrokes without preedit (Chrome Omnibox Enter/Tab)
+	forwardedLen         int  // runes of the current buffer already forwarded to the client
+	correctionBackspaces int  // synthetic BackSpaces requested (observable in tests)
 }
 
 // NewNepKeyEngine creates a new instance of NepKeyEngine
@@ -116,6 +120,7 @@ func NewNepKeyEngine(conn *dbus.Conn, objectPath dbus.ObjectPath, cfg *config.Co
 		macroModTime:   modTime,
 		lastSyncCheck:  time.Now(),
 		atWordBoundary: true,
+		asciiFastPath:  cfg.AsciiFastPath,
 	}
 }
 
@@ -135,6 +140,7 @@ func (e *NepKeyEngine) syncSettingsIfModified(force bool) {
 				e.configModTime = fi.ModTime()
 				methodChanged := newCfg.InputMethod != e.cfg.InputMethod
 				e.cfg = newCfg
+				e.asciiFastPath = newCfg.AsciiFastPath
 				e.enabled = newCfg.Enabled
 				if methodChanged {
 					e.eng.SetInputMethod(newCfg.InputMethod)
@@ -191,14 +197,55 @@ func (e *NepKeyEngine) updatePreedit(text string) {
 	}
 }
 
+// unforwarded returns the suffix of the current word buffer that the client
+// has not received yet (empty when everything was forwarded eagerly).
+func (e *NepKeyEngine) unforwarded() string {
+	buf := []rune(e.eng.GetWordBuffer())
+	if e.forwardedLen >= len(buf) {
+		return ""
+	}
+	return string(buf[e.forwardedLen:])
+}
+
+// resetBufferState clears both the composition buffer and fast-path accounting.
+func (e *NepKeyEngine) resetBufferState() {
+	e.eng.Reset()
+	e.forwardedLen = 0
+}
+
+// sendBackspaces forwards n synthetic BackSpace key events to the client.
+// Forwarded keys go to the application, never back into ProcessKeyEvent.
+// With nil conn (unit tests) only the observable counter advances.
+func (e *NepKeyEngine) sendBackspaces(n int) {
+	if n <= 0 {
+		return
+	}
+	e.correctionBackspaces += n
+	if e.conn != nil {
+		for i := 0; i < n; i++ {
+			e.ForwardKeyEvent(IBusKeyBackSpace, EvdevKeyBackSpace, 0)
+		}
+	}
+}
+
+// switchToComposing erases the eagerly forwarded prefix from the client so the
+// whole word can be redrawn as preedit. No-op when nothing was forwarded.
+func (e *NepKeyEngine) switchToComposing() {
+	if e.forwardedLen > 0 {
+		e.hidePreedit()
+		e.sendBackspaces(e.forwardedLen)
+		e.forwardedLen = 0
+	}
+}
+
 func (e *NepKeyEngine) commitBuffer() {
 	if e.eng.HasBuffer() {
-		buf := e.eng.GetWordBuffer()
+		tail := e.unforwarded()
 		e.hidePreedit()
-		if buf != "" {
-			e.commit(buf)
+		if tail != "" {
+			e.commit(tail)
 		}
-		e.eng.Reset()
+		e.resetBufferState()
 	}
 }
 
@@ -245,6 +292,19 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 				return false, nil
 			}
 			if e.eng.HasBuffer() {
+				if e.forwardedLen > 0 {
+					// Fast-path: the character is already in the client.
+					// Mirror the deletion internally and let the client delete it.
+					e.eng.OnBackspace()
+					e.forwardedLen--
+					if e.forwardedLen < 0 {
+						e.forwardedLen = 0
+					}
+					if !e.eng.HasBuffer() {
+						e.atWordBoundary = true
+					}
+					return false, nil
+				}
 				e.eng.OnBackspace()
 				buf := e.eng.GetWordBuffer()
 				if buf == "" {
@@ -263,13 +323,19 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			e.atWordBoundary = true
 			if e.eng.HasBuffer() {
 				e.syncSettingsIfModified(false)
-				text := e.eng.GetWordBuffer()
 				if act := e.eng.CheckMacro(0); act != nil {
-					text = string(act.AppendRunes)
+					// Macro replacement covers the whole word: erase the
+					// eagerly forwarded prefix first to avoid duplication.
+					e.hidePreedit()
+					e.sendBackspaces(e.forwardedLen)
+					e.commit(string(act.AppendRunes))
+					e.resetBufferState()
+				} else {
+					text := e.unforwarded()
+					e.hidePreedit()
+					e.commit(text)
+					e.resetBufferState()
 				}
-			e.hidePreedit()
-				e.commit(text)
-				e.eng.Reset()
 				// Single-press Enter: committing text AND returning false allows
 				// Web Chat, Zalo, Terminal, IDE và Chrome Omnibox search/submit
 				// trong 1 lần bấm. Tới suggestion cụ thể thì Tab/Down/click
@@ -289,14 +355,15 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 						runes = runes[:len(runes)-1]
 					}
 					e.hidePreedit()
+					e.sendBackspaces(e.forwardedLen)
 					e.commit(string(runes))
-					e.eng.Reset()
+					e.resetBufferState()
 					return true, nil
 				}
-				text := e.eng.GetWordBuffer()
+				text := e.unforwarded()
 				e.hidePreedit()
 				e.commit(text)
-				e.eng.Reset()
+				e.resetBufferState()
 				return false, nil
 			}
 			return false, nil
@@ -331,13 +398,16 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 		e.atWordBoundary = true
 		if e.eng.HasBuffer() {
 			e.syncSettingsIfModified(false)
-			text := e.eng.GetWordBuffer() + " "
 			if act := e.eng.CheckMacro(' '); act != nil {
-				text = string(act.AppendRunes)
+				e.hidePreedit()
+				e.sendBackspaces(e.forwardedLen)
+				e.commit(string(act.AppendRunes))
+			} else {
+				text := e.unforwarded() + " "
+				e.hidePreedit()
+				e.commit(text)
 			}
-			e.hidePreedit()
-			e.commit(text)
-			e.eng.Reset()
+			e.resetBufferState()
 			return true, nil
 		}
 		return false, nil
@@ -390,6 +460,7 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			e.atWordBoundary = false
 			_ = e.eng.ProcessKey(r)
 			if buf := e.eng.GetWordBuffer(); buf != "" {
+				e.switchToComposing()
 				e.updatePreedit(buf)
 				return true, nil
 			}
@@ -424,13 +495,16 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 
 		if hadBuffer {
 			e.syncSettingsIfModified(false)
-			text := e.eng.GetWordBuffer() + string(r)
 			if act := e.eng.CheckMacro(r); act != nil {
-				text = string(act.AppendRunes)
+				e.hidePreedit()
+				e.sendBackspaces(e.forwardedLen)
+				e.commit(string(act.AppendRunes))
+			} else {
+				text := e.unforwarded() + string(r)
+				e.hidePreedit()
+				e.commit(text)
 			}
-			e.hidePreedit()
-			e.commit(text)
-			e.eng.Reset()
+			e.resetBufferState()
 			e.setRawMode(enterRawAfterSep)
 			e.atWordBoundary = false
 			return true, nil
@@ -443,14 +517,24 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 
 	// 12. Normal Word characters (letters a-z, A-Z, etc.) - Vietnamese composition via Bamboo core
 	e.atWordBoundary = false
+	oldLen := len([]rune(e.eng.GetWordBuffer()))
 	_ = e.eng.ProcessKey(r)
 	buf := e.eng.GetWordBuffer()
-	if buf != "" {
-		e.updatePreedit(buf)
-		return true, nil
+	if buf == "" {
+		e.hidePreedit()
+		return false, nil
 	}
-	e.hidePreedit()
-	return false, nil
+	// ASCII fast-path (Chrome Omnibox Enter/Tab): a plain ASCII append means no
+	// Vietnamese composition is in progress, so forward the keystroke at once and
+	// never enter IME-composing state. The buffer is still tracked for tone keys.
+	newRunes := []rune(buf)
+	if e.asciiFastPath && isPureASCII(buf) && len(newRunes) == oldLen+1 && newRunes[len(newRunes)-1] == r {
+		e.forwardedLen = len(newRunes)
+		return false, nil
+	}
+	e.switchToComposing()
+	e.updatePreedit(buf)
+	return true, nil
 }
 
 func isPureASCII(s string) bool {
@@ -521,7 +605,7 @@ func (e *NepKeyEngine) FocusOut() *dbus.Error {
 }
 
 // SetContentType receives input purpose and hints from GNOME Shell / GTK / Wayland clients
-////@method(in_signature="uu")
+// //@method(in_signature="uu")
 func (e *NepKeyEngine) SetContentType(purpose uint32, hints uint32) *dbus.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()

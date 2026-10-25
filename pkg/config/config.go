@@ -21,6 +21,7 @@ type Config struct {
 	AutoCorrect     bool   `yaml:"auto_correct"`      // Tự động sửa lỗi chính tả
 	MacroEnabled    bool   `yaml:"macro_enabled"`     // Bật tính năng gõ tắt
 	MacroFile       string `yaml:"macro_file"`        // Đường dẫn file gõ tắt macros.yaml
+	AsciiFastPath   bool   `yaml:"ascii_fast_path"`   // Chuyển tiếp ASCII trực tiếp (thử nghiệm, Omnibox Enter/Tab)
 }
 
 // ResolveConfigPath locates config.yaml in user home ~/.config/nepkey or local path
@@ -162,4 +163,3 @@ func SaveMacros(path string, macros MacroTable) error {
 	}
 	return os.WriteFile(path, data, 0644)
 }
-

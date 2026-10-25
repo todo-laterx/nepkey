@@ -27,3 +27,9 @@ auto_correct: true        # Tự động sửa lỗi chính tả
 # Tính năng gõ tắt (Macro)
 macro_enabled: true
 macro_file: "configs/macros.yaml"
+
+# Chuyen tiep ASCII truc tiep (thu nghiem, mac dinh tat):
+# true = phim chu ASCII thuan forward ngay, khong giu preedit,
+# giup Enter/Tab an prediction tren Chrome Omnibox trong 1 lan bam.
+# false = giu nguyen duong preedit cu (an toan).
+#ascii_fast_path: false
