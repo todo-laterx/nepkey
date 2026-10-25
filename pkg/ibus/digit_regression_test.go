@@ -42,3 +42,35 @@ func TestDigitAsToneVNI(t *testing.T) {
 		t.Fatalf("expected buffer 'á', got %q", got)
 	}
 }
+
+// Enter thuần ASCII (you) nuốt Enter để giữ suggestion Chrome;
+// Enter lần 2 navigate. Tiếng Việt có dấu giữ single-press.
+func TestEnterAsciiVsVietnamese(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.InputMethod = "Telex 2"
+
+	e := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test-enter", cfg)
+	for _, ch := range "you" {
+		e.ProcessKeyEvent(uint32(ch), 0, 0)
+	}
+	if handled, _ := e.ProcessKeyEvent(IBusKeyReturn, 36, 0); !handled {
+		t.Fatalf("expected Enter after 'you' to be consumed (handled=true)")
+	}
+	if e.eng.HasBuffer() {
+		t.Fatalf("expected buffer empty after Enter, got %q", e.eng.GetWordBuffer())
+	}
+	if handled, _ := e.ProcessKeyEvent(IBusKeyReturn, 36, 0); handled {
+		t.Fatalf("expected second Enter (empty buffer) to pass through")
+	}
+
+	e2 := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test-enter-vi", cfg)
+	for _, ch := range "chaof" {
+		e2.ProcessKeyEvent(uint32(ch), 0, 0)
+	}
+	if got := e2.eng.GetWordBuffer(); got != "ch\u00e0o" {
+		t.Fatalf("expected buffer 'chào', got %q", got)
+	}
+	if handled, _ := e2.ProcessKeyEvent(IBusKeyReturn, 36, 0); handled {
+		t.Fatalf("expected Enter after Vietnamese to pass through (single-press submit)")
+	}
+}
