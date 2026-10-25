@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NepKey — Bộ gõ tiếng Việt cho Linux</title>
+<meta name="description" content="NepKey IBus: gõ tiếng Việt tự nhiên trên trình duyệt, app và terminal. Lõi Bamboo, tối giản, mã nguồn mở GPL-3.0.">
+<style>
+:root { color-scheme: dark; --bg:#0f1420; --card:#161d2e; --line:#26314a; --txt:#e8ecf4; --dim:#9aa6bf; --acc:#34d399; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--txt); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.7; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 56px 20px 80px; }
+.hero { text-align: left; padding: 24px 0 8px; }
+.hero img { width: 72px; height: 72px; }
+.hero h1 { font-size: 2rem; margin: 12px 0 4px; letter-spacing: -0.5px; }
+.hero p.tag { color: var(--dim); font-size: 1.05rem; }
+.badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 0; }
+.badges span { border: 1px solid var(--line); border-radius: 999px; padding: 2px 12px; font-size: .82rem; color: var(--dim); }
+.cmd { background: #0a0e18; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 20px 0; font-family: ui-monospace, monospace; font-size: .9rem; overflow-x: auto; white-space: nowrap; }
+.cmd b { color: var(--acc); font-weight: 600; }
+h2 { font-size: 1.25rem; margin: 40px 0 12px; }
+ul { list-style: none; }
+ul li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+ul li b { color: var(--acc); font-weight: 600; }
+a { color: var(--acc); }
+.foot { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--dim); font-size: .9rem; }
+.btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.btns a { border: 1px solid var(--acc); border-radius: 10px; padding: 8px 18px; text-decoration: none; font-weight: 600; }
+.btns a.ghost { border-color: var(--line); color: var(--txt); font-weight: 400; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <img src="logo.svg" alt="NepKey logo">
+    <h1>NepKey</h1>
+    <p class="tag">Bộ gõ tiếng Việt cho Linux — gõ tự nhiên mọi nơi: trình duyệt, app, terminal.</p>
+    <div class="badges"><span>IBus / GNOME</span><span>Wayland + X11</span><span>Telex 2 · Telex · VNI · VIQR</span><span>GPL-3.0</span></div>
+    <div class="btns">
+      <a href="https://github.com/todo-laterx/nepkey">GitHub</a>
+      <a class="ghost" href="https://github.com/todo-laterx/nepkey/releases">Tải .deb</a>
+      <a class="ghost" href="https://github.com/todo-laterx/nepkey/issues">Báo lỗi</a>
+    </div>
+  </div>
+
+  <h2>Cài trong 1 dòng (Ubuntu/Debian)</h2>
+  <div class="cmd"><b>$</b> curl -fsSL https://raw.githubusercontent.com/todo-laterx/nepkey/main/install.sh | bash</div>
+  <p>Rồi vào Settings → Keyboard → Input Sources thêm NepKey, bấm Super + Space để gõ. Chi tiết trong <a href="https://github.com/todo-laterx/nepkey">README</a>.</p>
+
+  <h2>Nỗi đau nó giải quyết</h2>
+  <ul>
+    <li><b>Gõ /task, /image</b> trong Slack/Discord/VS Code không bị nuốt dấu <b>/</b>, không kẹt gợi ý.</li>
+    <li><b>Link trên thanh địa chỉ</b> Chrome/Firefox không bị biến thành dấu tiếng Việt.</li>
+    <li><b>Enter 1 lần</b> gửi chat / chạy lệnh, không phải bấm 2 lần.</li>
+    <li><b>Hết lặp chữ</b> khi dùng ← → Home End trên app Electron và Wayland.</li>
+  </ul>
+
+  <h2>Làm được gì</h2>
+  <ul>
+    <li><b>4 kiểu gõ:</b> Telex 2, Telex, VNI, VIQR; bỏ dấu tự do; đặt dấu kiểu mới.</li>
+    <li><b>Gõ tắt macro</b> nạp từ file YAML, sửa là ăn ngay không restart.</li>
+    <li><b>V/E top bar:</b> Ctrl+Space chuyển tại chỗ, Super+Space chuyển nguồn nhập.</li>
+    <li><b>Cài đặt gọn 1 trang,</b> theo Dark/Light của máy, không rừng công tắc.</li>
+    <li><b>Ô mật khẩu</b> tự bypass, không can thiệp.</li>
+  </ul>
+
+  <h2>Tình trạng hỗ trợ</h2>
+  <ul>
+    <li><b>Ubuntu GNOME mới:</b> test ổn định hàng ngày (Wayland).</li>
+    <li><b>Debian/Fedora/Arch:</b> build từ mã nguồn được, cần người test cùng.</li>
+    <li><b>KDE / không GNOME:</b> IBus chạy được nhưng tích hợp kém — đó là đất của fcitx5.</li>
+  </ul>
+
+  <div class="foot">
+    NepKey Contributors · Lõi Bamboo Engine (MIT) · Phát hành GPL-3.0 ·
+    <a href="https://github.com/todo-laterx/nepkey">Mã nguồn</a>
+  </div>
+</div>
+</body>
+</html>

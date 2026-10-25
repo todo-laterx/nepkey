@@ -101,6 +101,14 @@ nepkey/
 
 ## Hướng dẫn cài đặt nhanh
 
+### Cách 0: Một dòng lệnh (Ubuntu/Debian, khuyên dùng)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/todo-laterx/nepkey/main/install.sh | bash
+```
+
+Tự tải `.deb` mới nhất từ Releases và cài đặt. Trang giới thiệu: https://todo-laterx.github.io/nepkey/
+
 ### Cách 1: Cài đặt tự động từ mã nguồn (khuyên dùng, không cần sudo)
 
 ```bash

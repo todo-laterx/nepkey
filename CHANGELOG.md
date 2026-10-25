@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Cai 1 dong lenh `curl ... install.sh | bash` (tai .deb moi nhat tu Releases); trang gioi thieu GitHub Pages (`docs/`).
+
 - Settings: rut gon tab Kieu go (bo Bang ma, Co che xuat khoi UI, giu trong file cau hinh); sua mac dinh output_method khop engine.
 
 ## [1.2.0] - 2026-10-26
