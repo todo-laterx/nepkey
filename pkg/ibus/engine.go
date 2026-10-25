@@ -180,12 +180,14 @@ func (e *NepKeyEngine) hidePreedit() {
 }
 
 // updatePreedit renders the current composed Vietnamese word with ZERO underline (IBUS_ATTR_UNDERLINE_NONE).
-// Mode IBUS_ENGINE_PREEDIT_COMMIT ensures broad compatibility across GTK, Chrome, Qt, and Wayland.
+// Mode CLEAR avoids double-commit: COMMIT makes clients auto-commit preedit on
+// Hide/FocusOut, which duplicates our explicit CommitText (focus-out duplicate,
+// terminal "runrun dev").
 func (e *NepKeyEngine) updatePreedit(text string) {
 	if e.conn != nil {
 		t := ibus.NewText(text)
 		// Zero-underline: do NOT add IBUS_ATTR_UNDERLINE_SINGLE.
-		e.UpdatePreeditTextWithMode(t, uint32(len([]rune(text))), true, ibus.IBUS_ENGINE_PREEDIT_COMMIT)
+		e.UpdatePreeditTextWithMode(t, uint32(len([]rune(text))), true, ibus.IBUS_ENGINE_PREEDIT_CLEAR)
 	}
 }
 
@@ -378,18 +380,26 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 		}
 	}
 
-	// 10. Digits ('0' - '9'): commit buffer if any, then pass digit through directly
+	// 10. Digits ('0' - '9'): word-break in Telex, tone keys in VNI.
+	// Bamboo returns empty for "P"+"1" (digit splits last word), so feeding
+	// a digit into a non-empty Telex buffer would discard "P". Commit first.
 	if r >= '0' && r <= '9' {
-		e.atWordBoundary = false
-		if e.eng.HasBuffer() {
+		if e.eng.CanProcessKey(r) {
+			e.atWordBoundary = false
 			_ = e.eng.ProcessKey(r)
-			buf := e.eng.GetWordBuffer()
-			if buf != "" {
+			if buf := e.eng.GetWordBuffer(); buf != "" {
 				e.updatePreedit(buf)
 				return true, nil
 			}
-			e.commitBuffer()
+			e.hidePreedit()
 			return false, nil
+		}
+		e.atWordBoundary = false
+		if e.eng.HasBuffer() {
+			text := e.eng.GetWordBuffer()
+			e.hidePreedit()
+			e.commit(text)
+			e.eng.Reset()
 		}
 		return false, nil
 	}

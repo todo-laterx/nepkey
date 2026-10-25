@@ -122,6 +122,12 @@ func (e *Engine) SetCharset(cs string) {
 	e.Reset()
 }
 
+// CanProcessKey reports whether rune is a valid key for the current input method
+// (e.g. digits are tone keys in VNI but word-breaks in Telex).
+func (e *Engine) CanProcessKey(r rune) bool {
+	return e.bEngine.CanProcessKey(unicode.ToLower(r))
+}
+
 // GetCharset returns the current output charset
 func (e *Engine) GetCharset() string {
 	if e.charset == "" {
