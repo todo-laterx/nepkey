@@ -267,18 +267,13 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 				if act := e.eng.CheckMacro(0); act != nil {
 					text = string(act.AppendRunes)
 				}
-				e.hidePreedit()
+			e.hidePreedit()
 				e.commit(text)
 				e.eng.Reset()
-				// ASCII thuần (you, gmail): nuốt Enter để Chrome giữ highlight
-				// suggestion (youtube), Enter lần 2 sẽ navigate. Tránh race
-				// CommitText + forward khiến Enter đầu chỉ chốt thành "you".
-				// Tiếng Việt có dấu giữ single-press submit như cũ.
-				if isPureASCII(text) {
-					return true, nil
-				}
 				// Single-press Enter: committing text AND returning false allows
-				// Web Chat, Zalo, Terminal, and IDE to submit/execute in 1 single press!
+				// Web Chat, Zalo, Terminal, IDE và Chrome Omnibox search/submit
+				// trong 1 lần bấm. Tới suggestion cụ thể thì Tab/Down/click
+				// chọn trước rồi Enter (đúng native Chrome).
 				return false, nil
 			}
 			return false, nil

@@ -43,8 +43,8 @@ func TestDigitAsToneVNI(t *testing.T) {
 	}
 }
 
-// Enter thuần ASCII (you) nuốt Enter để giữ suggestion Chrome;
-// Enter lần 2 navigate. Tiếng Việt có dấu giữ single-press.
+// Enter luôn forward (single-press submit/search).
+// Tới suggestion cụ thể thì Tab/Down/click chọn trước rồi Enter.
 func TestEnterAsciiVsVietnamese(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.InputMethod = "Telex 2"
@@ -53,14 +53,11 @@ func TestEnterAsciiVsVietnamese(t *testing.T) {
 	for _, ch := range "you" {
 		e.ProcessKeyEvent(uint32(ch), 0, 0)
 	}
-	if handled, _ := e.ProcessKeyEvent(IBusKeyReturn, 36, 0); !handled {
-		t.Fatalf("expected Enter after 'you' to be consumed (handled=true)")
+	if handled, _ := e.ProcessKeyEvent(IBusKeyReturn, 36, 0); handled {
+		t.Fatalf("expected Enter after 'you' to pass through (handled=false)")
 	}
 	if e.eng.HasBuffer() {
 		t.Fatalf("expected buffer empty after Enter, got %q", e.eng.GetWordBuffer())
-	}
-	if handled, _ := e.ProcessKeyEvent(IBusKeyReturn, 36, 0); handled {
-		t.Fatalf("expected second Enter (empty buffer) to pass through")
 	}
 
 	e2 := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test-enter-vi", cfg)
