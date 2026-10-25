@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Settings: rut gon tab Kieu go (bo Bang ma, Co che xuat khoi UI, giu trong file cau hinh); sua mac dinh output_method khop engine.
+
 ## [1.2.0] - 2026-10-26
 
 Trong tam: tuong thich go tu nhien tren trinh duyet / app / terminal, phim `/` chay chuan.

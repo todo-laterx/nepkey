@@ -30,7 +30,7 @@ MACRO_FILE = os.path.join(CONFIG_DIR, "macros.yaml")
 DEFAULT_CONFIG = {
     "input_method": "Telex 2",
     "charset": "Unicode",
-    "output_method": "hex",
+    "output_method": "clipboard",
     "device_path": "auto",
     "uinput_path": "/dev/uinput",
     "toggle_key": "Ctrl+Space",
@@ -124,7 +124,7 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         page = Adw.PreferencesPage(title="Kiểu gõ", icon_name="input-keyboard-symbolic")
 
         # Group 1: Bàn phím & Phương thức gõ
-        grp_methods = Adw.PreferencesGroup(title="Phương thức gõ tiếng Việt", description="Lựa chọn kiểu gõ phím và cơ chế tương thích với hệ thống")
+        grp_methods = Adw.PreferencesGroup(title="Phương thức gõ tiếng Việt", description="Chọn kiểu gõ và phím chuyển đổi V/E")
 
         # Combo: Input Method
         self.method_names = ["Telex 2", "Telex", "VNI", "VIQR"]
@@ -135,38 +135,6 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
             self.row_method.set_selected(self.method_names.index(curr_m))
         self.row_method.connect("notify::selected", self.on_setting_changed)
         grp_methods.add(self.row_method)
-
-        # Combo: Charset
-        self.charset_names = ["Unicode", "Unicode tổ hợp", "TCVN3 (ABC)", "VNI Windows", "VIQR"]
-        self.charset_labels = [
-            "Unicode",
-            "Unicode Tổ hợp",
-            "TCVN3",
-            "VNI Windows",
-            "VIQR",
-        ]
-        model_charsets = Gtk.StringList.new(self.charset_labels)
-        self.row_charset = Adw.ComboRow(
-            title="Bảng mã ký tự",
-            subtitle="Chuẩn mã hóa xuất văn bản tiếng Việt",
-            model=model_charsets
-        )
-        curr_cs = self.cfg.get("charset", "Unicode")
-        if curr_cs in self.charset_names:
-            self.row_charset.set_selected(self.charset_names.index(curr_cs))
-        self.row_charset.connect("notify::selected", self.on_setting_changed)
-        grp_methods.add(self.row_charset)
-
-        # Combo: Output Method
-        self.output_names = ["hex", "clipboard"]
-        self.output_labels = ["Native Hex Linux", "Clipboard Paste"]
-        model_outputs = Gtk.StringList.new(self.output_labels)
-        self.row_output = Adw.ComboRow(title="Cơ chế xuất ký tự", subtitle="Phương thức truyền ký tự Unicode đến ứng dụng", model=model_outputs)
-        curr_out = self.cfg.get("output_method", "hex")
-        if curr_out in self.output_names:
-            self.row_output.set_selected(self.output_names.index(curr_out))
-        self.row_output.connect("notify::selected", self.on_setting_changed)
-        grp_methods.add(self.row_output)
 
         # Combo: Toggle Key
         self.toggle_keys = ["Ctrl+Space", "Alt+Shift", "Ctrl+Shift"]
@@ -420,14 +388,6 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         m_idx = self.row_method.get_selected()
         if 0 <= m_idx < len(self.method_names):
             self.cfg["input_method"] = self.method_names[m_idx]
-
-        c_idx = self.row_charset.get_selected()
-        if 0 <= c_idx < len(self.charset_names):
-            self.cfg["charset"] = self.charset_names[c_idx]
-
-        o_idx = self.row_output.get_selected()
-        if 0 <= o_idx < len(self.output_names):
-            self.cfg["output_method"] = self.output_names[o_idx]
 
         t_idx = self.row_toggle.get_selected()
         if 0 <= t_idx < len(self.toggle_keys):
