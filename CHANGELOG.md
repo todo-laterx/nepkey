@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Trang gioi thieu viet lai: bo cuc bat doi xung, anh chup that tu cua so cai dat, bang trang thai distro trung thuc, nut chep lenh co phan hoi, ho tro dark/light theo he thong.
+
 - Cai 1 dong lenh `curl ... install.sh | bash` (tai .deb moi nhat tu Releases); trang gioi thieu GitHub Pages (`docs/`).
 
 - Settings: rut gon tab Kieu go (bo Bang ma, Co che xuat khoi UI, giu trong file cau hinh); sua mac dinh output_method khop engine.
