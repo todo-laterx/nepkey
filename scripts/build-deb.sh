@@ -4,7 +4,7 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DIR"
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 ARCH="amd64"
 PKG_DIR="build/deb"
 DEB_NAME="nepkey_${VERSION}_${ARCH}.deb"

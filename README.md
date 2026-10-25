@@ -54,6 +54,10 @@ Cơ chế chính: `pkg/ibus/engine.go` — `rawTokenMode` / `slashCommandMode` +
 - App: GNOME Terminal, VS Code (Electron), Chrome/Firefox address bar, Slack/Discord, Claude/ChatGPT web
 - Go 1.27.1, `go test ./...` pass (xem `pkg/engine/*_test.go`, `pkg/ibus/*_test.go`)
 
+## Chế độ ASCII nhanh (thử nghiệm)
+
+`ascii_fast_path: true` trong `~/.config/nepkey/config.yaml` (mặc định `false`): chữ ASCII thuần được chuyển thẳng tới app, không giữ preedit, nên Enter/Tab ăn prediction trên thanh địa chỉ Chrome trong 1 lần bấm. Khi xuất hiện dấu tiếng Việt, engine tự xóa phần đã chuyển và vẽ lại preedit như cũ. Chỉ bật với app báo surrounding-text (Chrome, ô nhập GTK); terminal và app không báo dùng đường preedit cũ nên hành vi giữ nguyên.
+
 ## Known limitations
 
 - `output_method: clipboard` là mặc định khuyến nghị cho Chrome/Zalo/Terminal. Chế độ `hex` (Ctrl+Shift+U) chỉ phù hợp GTK thuần.

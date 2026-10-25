@@ -81,10 +81,16 @@ type NepKeyEngine struct {
 	inputPurpose     uint32 // current field input purpose (e.g. password field)
 	inputHints       uint32 // current field input hints
 
-	asciiFastPath        bool   // forward pure-ASCII keystrokes without preedit (Chrome Omnibox Enter/Tab)
-	forwardedLen         int    // runes of the current buffer already forwarded to the client
-	correctionBackspaces int    // synthetic BackSpaces requested (observable in tests)
-	bsKeycode            uint32 // keycode for synthetic BackSpace, learned from real events
+	asciiFastPath        bool     // forward pure-ASCII keystrokes without preedit (Chrome Omnibox Enter/Tab)
+	forwardedLen         int      // runes of the current buffer already forwarded to the client
+	correctionBackspaces int      // synthetic BackSpaces requested (observable in tests)
+	correctionDeletes    int      // surrounding-text deletions requested (observable in tests)
+	bsKeycode            uint32   // keycode for synthetic BackSpace, learned from real events
+	clientCaps           uint32   // IBus capabilities reported by the focused client
+	wordFastPath         bool     // latched at word start: fast-path for the whole word or not
+	restoreCommits       int      // prefix restores after preedit abandon (observable in tests)
+	commitLog            []string // every non-empty commit request (observable in tests)
+	preeditHides         int      // HidePreeditText requests (observable in tests)
 }
 
 // NewNepKeyEngine creates a new instance of NepKeyEngine
@@ -180,12 +186,21 @@ func (e *NepKeyEngine) setRawMode(active bool) {
 }
 
 func (e *NepKeyEngine) commit(text string) {
-	if e.conn != nil && text != "" {
+	if text == "" {
+		return
+	}
+	// Bounded log: only the tail is ever inspected by tests.
+	e.commitLog = append(e.commitLog, text)
+	if len(e.commitLog) > 32 {
+		e.commitLog = e.commitLog[len(e.commitLog)-32:]
+	}
+	if e.conn != nil {
 		e.CommitText(ibus.NewText(text))
 	}
 }
 
 func (e *NepKeyEngine) hidePreedit() {
+	e.preeditHides++
 	if e.conn != nil {
 		e.HidePreeditText()
 	}
@@ -217,6 +232,17 @@ func (e *NepKeyEngine) unforwarded() string {
 func (e *NepKeyEngine) resetBufferState() {
 	e.eng.Reset()
 	e.forwardedLen = 0
+	e.wordFastPath = false
+}
+
+// latchWordMode freezes the fast-path decision for the word being started.
+// Clients (Electron) may report capabilities a few keystrokes late after
+// focus (e.g. caps=9 then caps=41 mid-word); re-reading caps per keystroke
+// would mix preedit and forwarded state in one word and corrupt it.
+func (e *NepKeyEngine) latchWordMode(wasEmpty bool) {
+	if wasEmpty {
+		e.wordFastPath = e.asciiFastPath && e.clientCaps&IBusCapSurroundingText != 0
+	}
 }
 
 // sendBackspaces forwards n synthetic BackSpace key events to the client.
@@ -234,12 +260,30 @@ func (e *NepKeyEngine) sendBackspaces(n int) {
 	}
 }
 
+// eraseForwarded removes n already-forwarded runes before the cursor.
+// Clients advertising surrounding-text (Chrome, GTK entries) get a direct
+// buffer deletion, which they always honor; the rest (terminals) get
+// synthetic BackSpace key events.
+func (e *NepKeyEngine) eraseForwarded(n int) {
+	if n <= 0 {
+		return
+	}
+	if e.clientCaps&IBusCapSurroundingText != 0 {
+		e.correctionDeletes += n
+		if e.conn != nil {
+			e.DeleteSurroundingText(int32(-n), uint32(n))
+		}
+		return
+	}
+	e.sendBackspaces(n)
+}
+
 // switchToComposing erases the eagerly forwarded prefix from the client so the
 // whole word can be redrawn as preedit. No-op when nothing was forwarded.
 func (e *NepKeyEngine) switchToComposing() {
 	if e.forwardedLen > 0 {
 		e.hidePreedit()
-		e.sendBackspaces(e.forwardedLen)
+		e.eraseForwarded(e.forwardedLen)
 		e.forwardedLen = 0
 	}
 }
@@ -336,7 +380,7 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 					// Macro replacement covers the whole word: erase the
 					// eagerly forwarded prefix first to avoid duplication.
 					e.hidePreedit()
-					e.sendBackspaces(e.forwardedLen)
+					e.eraseForwarded(e.forwardedLen)
 					e.commit(string(act.AppendRunes))
 					e.resetBufferState()
 				} else {
@@ -364,7 +408,7 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 						runes = runes[:len(runes)-1]
 					}
 					e.hidePreedit()
-					e.sendBackspaces(e.forwardedLen)
+					e.eraseForwarded(e.forwardedLen)
 					e.commit(string(runes))
 					e.resetBufferState()
 					return true, nil
@@ -381,9 +425,10 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			e.setRawMode(false)
 			e.atWordBoundary = true
 			if e.eng.HasBuffer() {
+				text := e.unforwarded()
 				e.hidePreedit()
-				e.commit(e.eng.GetWordBuffer())
-				e.eng.Reset()
+				e.commit(text)
+				e.resetBufferState()
 				return true, nil
 			}
 			return false, nil
@@ -409,7 +454,7 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			e.syncSettingsIfModified(false)
 			if act := e.eng.CheckMacro(' '); act != nil {
 				e.hidePreedit()
-				e.sendBackspaces(e.forwardedLen)
+				e.eraseForwarded(e.forwardedLen)
 				e.commit(string(act.AppendRunes))
 			} else {
 				text := e.unforwarded() + " "
@@ -478,10 +523,12 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 		}
 		e.atWordBoundary = false
 		if e.eng.HasBuffer() {
-			text := e.eng.GetWordBuffer()
+			// Commit only what the client has not received yet: the
+			// forwarded prefix is already on screen (e.g. "g" in "g6").
+			text := e.unforwarded()
 			e.hidePreedit()
 			e.commit(text)
-			e.eng.Reset()
+			e.resetBufferState()
 		}
 		return false, nil
 	}
@@ -506,7 +553,7 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			e.syncSettingsIfModified(false)
 			if act := e.eng.CheckMacro(r); act != nil {
 				e.hidePreedit()
-				e.sendBackspaces(e.forwardedLen)
+				e.eraseForwarded(e.forwardedLen)
 				e.commit(string(act.AppendRunes))
 			} else {
 				text := e.unforwarded() + string(r)
@@ -527,17 +574,35 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 	// 12. Normal Word characters (letters a-z, A-Z, etc.) - Vietnamese composition via Bamboo core
 	e.atWordBoundary = false
 	oldLen := len([]rune(e.eng.GetWordBuffer()))
+	wasEmpty := oldLen == 0
 	_ = e.eng.ProcessKey(r)
+	e.latchWordMode(wasEmpty)
 	buf := e.eng.GetWordBuffer()
 	if buf == "" {
+		// Bamboo produced nothing: buffer is empty so there is no prefix
+		// left to correct later; drop stale fast-path accounting.
 		e.hidePreedit()
+		e.forwardedLen = 0
 		return false, nil
 	}
 	// ASCII fast-path (Chrome Omnibox Enter/Tab): a plain ASCII append means no
 	// Vietnamese composition is in progress, so forward the keystroke at once and
 	// never enter IME-composing state. The buffer is still tracked for tone keys.
+	// Only for clients with surrounding-text (Chrome, GTK entries): terminals
+	// (VTE) neither need it nor handle the synthetic correction reliably,
+	// so they stay on the legacy preedit path. The decision is latched at
+	// word start because caps may arrive late after focus changes.
 	newRunes := []rune(buf)
-	if e.asciiFastPath && isPureASCII(buf) && len(newRunes) == oldLen+1 && newRunes[len(newRunes)-1] == r {
+	if e.wordFastPath && isPureASCII(buf) && len(newRunes) == oldLen+1 && newRunes[len(newRunes)-1] == r {
+		// Leaving composing state (e.g. Telex tone cancel "te"+"r"->"ter"):
+		// the erased prefix is not in the client, so re-emit everything
+		// except the current keystroke (forwarded by returning false).
+		// Without this the client ends up with "rminal" instead of "terminal".
+		e.hidePreedit()
+		if oldLen > 0 && e.forwardedLen == 0 {
+			e.restoreCommits++
+			e.commit(string(newRunes[:len(newRunes)-1]))
+		}
 		e.forwardedLen = len(newRunes)
 		return false, nil
 	}
@@ -657,7 +722,11 @@ func (e *NepKeyEngine) Disable() *dbus.Error {
 	return nil
 }
 
-// SetCapabilities reports supported IBus capabilities
+// SetCapabilities records what the focused client supports (surrounding
+// text decides the correction mechanism) and reports engine capabilities.
 func (e *NepKeyEngine) SetCapabilities(cap uint32) *dbus.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.clientCaps = cap
 	return nil
 }

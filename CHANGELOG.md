@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-26
+
+- Them `ascii_fast_path` (mac dinh tat) trong `config.yaml`: chuyen tiep phim ASCII thuan ngay lap tuc, khong giu preedit, giup Enter/Tab an prediction tren Chrome Omnibox trong 1 lan bam; tu dong chuyen sang preedit + xoa vung (surrounding-text, fallback BackSpace) khi xuat hien dau tieng Viet.
+- Khoa che do theo tung tu (chiu duoc capability den muon sau focus tren Electron), chi fast-path khi client bao surrounding-text (terminal VTE giu duong preedit cu).
+- Sua huy dau Telex tu phuc hoi tien to da xoa ("terminal" khong con ra "rminal"), sua commit nhan doi o nhanh so va Escape ("gg6").
+- 25 test xanh (17 ibus + 8 engine), `go vet` sach.
+
 - Them `ascii_fast_path` (mac dinh tat) trong `config.yaml`: chuyen tiep phim ASCII thuan ngay lap tuc, khong giu preedit, giup Enter/Tab an prediction tren Chrome Omnibox trong 1 lan bam; tu dong chuyen sang preedit + backspace-correct khi xuat hien dau tieng Viet. Backspace bu dung keycode XKB (22) hoc tu phim that thay vi evdev (14) de client khong drop event.
 
 - Tach `TRADEMARK.md` rieng khoi `LICENSE`, giu GPL-3.0 cho code.

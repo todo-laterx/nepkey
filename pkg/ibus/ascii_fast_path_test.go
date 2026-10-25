@@ -11,6 +11,9 @@ func newFastPathEngine() *NepKeyEngine {
 	cfg.InputMethod = "Telex 2"
 	cfg.AsciiFastPath = true
 	e := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test", cfg)
+	// Simulate a Chrome/GTK client: surrounding-text support is what arms
+	// the fast-path (terminals never set this capability).
+	e.SetCapabilities(IBusCapSurroundingText)
 	e.eng.SetMacros(map[string]string{"vn": "Việt Nam"}, true)
 	return e
 }
@@ -74,8 +77,11 @@ func TestAsciiFastPath_TransitionToComposing(t *testing.T) {
 	if e.forwardedLen != 0 {
 		t.Fatalf("expected forwardedLen reset to 0, got %d", e.forwardedLen)
 	}
-	if e.correctionBackspaces != 4 {
-		t.Fatalf("expected 4 correction backspaces, got %d", e.correctionBackspaces)
+	if e.correctionDeletes != 4 {
+		t.Fatalf("expected 4 surrounding deletions, got %d", e.correctionDeletes)
+	}
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected 0 synthetic backspaces on surrounding path, got %d", e.correctionBackspaces)
 	}
 	// Enter submits the composed Vietnamese word.
 	if handled, _ := e.ProcessKeyEvent(IBusKeyReturn, 36, 0); handled {
@@ -104,8 +110,11 @@ func TestAsciiFastPath_VietnameseFlow(t *testing.T) {
 	if e.eng.GetWordBuffer() != "chào" {
 		t.Fatalf("expected buffer 'chào', got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionBackspaces != 4 {
-		t.Fatalf("expected 4 correction backspaces, got %d", e.correctionBackspaces)
+	if e.correctionDeletes != 4 {
+		t.Fatalf("expected 4 surrounding deletions, got %d", e.correctionDeletes)
+	}
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected 0 synthetic backspaces on surrounding path, got %d", e.correctionBackspaces)
 	}
 }
 
@@ -135,8 +144,8 @@ func TestAsciiFastPath_MacroForwarded(t *testing.T) {
 	if e.eng.HasBuffer() {
 		t.Fatalf("expected empty buffer after macro, got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionBackspaces != 2 {
-		t.Fatalf("expected 2 correction backspaces for forwarded 'vn', got %d", e.correctionBackspaces)
+	if e.correctionDeletes != 2 {
+		t.Fatalf("expected 2 surrounding deletions for forwarded 'vn', got %d", e.correctionDeletes)
 	}
 }
 
@@ -150,5 +159,239 @@ func TestAsciiFastPath_DisabledByDefault(t *testing.T) {
 		if !h {
 			t.Fatalf("char %d: legacy path must consume into preedit (true)", i)
 		}
+	}
+}
+
+func TestAsciiFastPath_SurroundingTextCorrection(t *testing.T) {
+	e := newFastPathEngine()
+	// Simulate a Chrome/GTK client advertising surrounding-text support.
+	e.SetCapabilities(IBusCapSurroundingText)
+	for _, h := range typeRunes(e, "cach") {
+		if h {
+			t.Fatalf("expected forward, got true")
+		}
+	}
+	if handled, _ := e.ProcessKeyEvent(uint32('s'), 0, 0); !handled {
+		t.Fatalf("expected tone key to engage preedit (true)")
+	}
+	if e.eng.GetWordBuffer() != "cách" {
+		t.Fatalf("expected buffer 'cách', got %q", e.eng.GetWordBuffer())
+	}
+	if e.correctionDeletes != 4 {
+		t.Fatalf("expected 4 surrounding deletions, got %d", e.correctionDeletes)
+	}
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected 0 synthetic backspaces, got %d", e.correctionBackspaces)
+	}
+}
+
+func TestAsciiFastPath_TerminalStaysOnLegacyPreedit(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.InputMethod = "Telex 2"
+	cfg.AsciiFastPath = true
+	e := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test", cfg)
+	e.SetCapabilities(0) // VTE terminals advertise no surrounding-text
+	// 'plugin' has no Telex tone keys, so the legacy buffer mirrors the keys.
+	for i, h := range typeRunes(e, "plugin") {
+		if !h {
+			t.Fatalf("char %d: terminal must stay on consuming preedit path (true)", i)
+		}
+	}
+	if e.forwardedLen != 0 {
+		t.Fatalf("expected forwardedLen 0 on legacy path, got %d", e.forwardedLen)
+	}
+	if e.eng.GetWordBuffer() != "plugin" {
+		t.Fatalf("expected buffer 'plugin', got %q", e.eng.GetWordBuffer())
+	}
+	if e.correctionBackspaces != 0 || e.correctionDeletes != 0 {
+		t.Fatalf("expected no correction on legacy path, got bs=%d del=%d", e.correctionBackspaces, e.correctionDeletes)
+	}
+}
+
+func TestAsciiFastPath_NoCapsFallsBackToBackspace(t *testing.T) {
+	e := newFastPathEngine()
+	e.SetCapabilities(0)
+	// Without surrounding-text the gate keeps the legacy preedit path:
+	// every key is consumed and no eager correction is ever requested.
+	for i, h := range typeRunes(e, "cach") {
+		if !h {
+			t.Fatalf("char %d: legacy path must consume (true)", i)
+		}
+	}
+	if handled, _ := e.ProcessKeyEvent(uint32('s'), 0, 0); !handled {
+		t.Fatalf("expected tone key consumed (true)")
+	}
+	if e.eng.GetWordBuffer() != "cách" {
+		t.Fatalf("expected buffer 'cách', got %q", e.eng.GetWordBuffer())
+	}
+	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
+		t.Fatalf("expected no eager correction, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	}
+}
+
+func TestAsciiFastPath_CapsFlapMidWordStaysLegacy(t *testing.T) {
+	// Reproduces the Antigravity log: first key arrives with caps=9
+	// (no surrounding), the client reports caps=41 only afterwards.
+	// The word started legacy must stay legacy: no eager erasure.
+	e := newFastPathEngine()
+	e.SetCapabilities(0)
+	for i, h := range typeRunes(e, "te") {
+		if !h {
+			t.Fatalf("char %d: expected consume (true)", i)
+		}
+	}
+	e.SetCapabilities(IBusCapSurroundingText) // late arrival, mid-word
+	if handled, _ := e.ProcessKeyEvent(uint32('r'), 0, 0); !handled {
+		t.Fatalf("expected tone key consumed (true)")
+	}
+	if e.eng.GetWordBuffer() != "tẻ" {
+		t.Fatalf("expected buffer 'tẻ', got %q", e.eng.GetWordBuffer())
+	}
+	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
+		t.Fatalf("expected no eager erasure, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	}
+	if e.forwardedLen != 0 {
+		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
+	}
+}
+
+func TestAsciiFastPath_CapsLostMidWordUsesLiveCaps(t *testing.T) {
+	// Word starts fast (caps present), caps drop before the tone key:
+	// the erasure mechanism follows the live caps (BackSpace fallback).
+	e := newFastPathEngine()
+	typeRunes(e, "te")
+	e.SetCapabilities(0)
+	if handled, _ := e.ProcessKeyEvent(uint32('r'), 0, 0); !handled {
+		t.Fatalf("expected tone key to engage composing (true)")
+	}
+	if e.eng.GetWordBuffer() != "tẻ" {
+		t.Fatalf("expected buffer 'tẻ', got %q", e.eng.GetWordBuffer())
+	}
+	if e.correctionBackspaces != 2 {
+		t.Fatalf("expected 2 fallback backspaces, got %d", e.correctionBackspaces)
+	}
+	if e.correctionDeletes != 0 {
+		t.Fatalf("expected 0 surrounding deletions, got %d", e.correctionDeletes)
+	}
+}
+
+func TestAsciiFastPath_ToneCancelHidesPreedit(t *testing.T) {
+	// Telex tone cancel: "tẻ" + "r" -> "ter". The abandoned preedit must
+	// be hidden or the client keeps rendering the ghost alongside "ter".
+	e := newFastPathEngine()
+	typeRunes(e, "te")
+	hidesBefore := e.preeditHides
+	if handled, _ := e.ProcessKeyEvent(uint32('r'), 0, 0); !handled {
+		t.Fatalf("expected tone key consumed (true)")
+	}
+	if e.eng.GetWordBuffer() != "tẻ" {
+		t.Fatalf("expected buffer 'tẻ', got %q", e.eng.GetWordBuffer())
+	}
+	if handled, _ := e.ProcessKeyEvent(uint32('r'), 0, 0); handled {
+		t.Fatalf("expected cancel key forwarded (false)")
+	}
+	if e.eng.GetWordBuffer() != "ter" {
+		t.Fatalf("expected buffer 'ter', got %q", e.eng.GetWordBuffer())
+	}
+	if e.forwardedLen != 3 {
+		t.Fatalf("expected forwardedLen 3, got %d", e.forwardedLen)
+	}
+	if e.preeditHides <= hidesBefore {
+		t.Fatalf("expected a preedit hide on composing->forward transition")
+	}
+}
+
+func TestAsciiFastPath_ToneCancelRestoresPrefix(t *testing.T) {
+	// Typing an English word in Telex mode: "te" + "r" -> "tẻ" (erased),
+	// second "r" cancels the tone -> "ter". The client must end up with
+	// the full word, not "rminal".
+	e := newFastPathEngine()
+	typeRunes(e, "te")
+	if handled, _ := e.ProcessKeyEvent(uint32('r'), 0, 0); !handled {
+		t.Fatalf("expected tone key consumed (true)")
+	}
+	if e.eng.GetWordBuffer() != "tẻ" {
+		t.Fatalf("expected buffer 'tẻ', got %q", e.eng.GetWordBuffer())
+	}
+	if handled, _ := e.ProcessKeyEvent(uint32('r'), 0, 0); handled {
+		t.Fatalf("expected cancel key forwarded (false)")
+	}
+	if e.eng.GetWordBuffer() != "ter" {
+		t.Fatalf("expected buffer 'ter', got %q", e.eng.GetWordBuffer())
+	}
+	if e.forwardedLen != 3 {
+		t.Fatalf("expected forwardedLen 3, got %d", e.forwardedLen)
+	}
+	if e.restoreCommits != 1 {
+		t.Fatalf("expected 1 prefix restore, got %d", e.restoreCommits)
+	}
+}
+
+func TestAsciiFastPath_TelexDigitCommitsSuffixOnly(t *testing.T) {
+	// "te" forwarded, then Telex digit "1" (word break): the client already
+	// holds "te", so nothing must be committed again (else "tete").
+	e := newFastPathEngine()
+	typeRunes(e, "te")
+	if handled, _ := e.ProcessKeyEvent(uint32('1'), 0, 0); handled {
+		t.Fatalf("expected digit forwarded (false)")
+	}
+	if e.eng.HasBuffer() {
+		t.Fatalf("expected empty buffer, got %q", e.eng.GetWordBuffer())
+	}
+	if e.forwardedLen != 0 {
+		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
+	}
+	if len(e.commitLog) != 0 {
+		t.Fatalf("expected no commit, got %q", e.commitLog)
+	}
+}
+
+func TestAsciiFastPath_LegacyDigitCommitsFullWord(t *testing.T) {
+	// Same keystrokes on the legacy path: nothing forwarded, so the full
+	// word must be committed at the digit boundary.
+	cfg := config.DefaultConfig()
+	e := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test", cfg)
+	e.SetCapabilities(0)
+	typeRunes(e, "te")
+	if handled, _ := e.ProcessKeyEvent(uint32('1'), 0, 0); handled {
+		t.Fatalf("expected digit forwarded (false)")
+	}
+	if len(e.commitLog) != 1 || e.commitLog[0] != "te" {
+		t.Fatalf("expected one commit of 'te', got %q", e.commitLog)
+	}
+}
+
+func TestAsciiFastPath_EscapeCommitsSuffixOnly(t *testing.T) {
+	e := newFastPathEngine()
+	typeRunes(e, "te")
+	if handled, _ := e.ProcessKeyEvent(IBusKeyEscape, 0, 0); !handled {
+		t.Fatalf("expected Escape consumed (true)")
+	}
+	if e.eng.HasBuffer() {
+		t.Fatalf("expected empty buffer, got %q", e.eng.GetWordBuffer())
+	}
+	if len(e.commitLog) != 0 {
+		t.Fatalf("expected no commit (prefix already forwarded), got %q", e.commitLog)
+	}
+}
+
+func TestAsciiFastPath_VNIDigitStartStaysLegacy(t *testing.T) {
+	// VNI tone digits are consumed, never forwarded: a digit-started word
+	// must stay on the legacy path with zero fast-path accounting.
+	cfg := config.DefaultConfig()
+	cfg.InputMethod = "VNI"
+	cfg.AsciiFastPath = true
+	e := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test", cfg)
+	e.SetCapabilities(IBusCapSurroundingText)
+	for _, ch := range "1a" {
+		if handled, _ := e.ProcessKeyEvent(uint32(ch), 0, 0); !handled {
+			t.Fatalf("char %q: expected consume (true)", string(ch))
+		}
+	}
+	if e.forwardedLen != 0 {
+		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
+	}
+	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
+		t.Fatalf("expected no correction, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
 	}
 }
