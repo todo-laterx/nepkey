@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=NepKey
+Comment=Cài đặt bộ gõ tiếng Việt NepKey
+Exec=nepkey-settings
+Icon=nepkey
+Terminal=false
+Type=Application
+Categories=Utility;Settings;DesktopSettings;
+Keywords=nepkey;vietnamese;unikey;evkey;bogo;telex;vni;tieng viet;
+StartupNotify=true

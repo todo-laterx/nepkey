@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <!-- Background Gradient: Deep Slate to Midnight -->
+    <linearGradient id="e_bg" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="50%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#060911" />
+    </linearGradient>
+
+    <!-- Glass Rim Highlight -->
+    <linearGradient id="e_rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#93C5FD" stop-opacity="0.45" />
+      <stop offset="35%" stop-color="#3B82F6" stop-opacity="0.25" />
+      <stop offset="70%" stop-color="#FFFFFF" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.6" />
+    </linearGradient>
+
+    <!-- Ambient Core Glow (Sapphire / Cobalt) -->
+    <radialGradient id="e_ambient" cx="50%" cy="56%" r="48%">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.32" />
+      <stop offset="50%" stop-color="#1D4ED8" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Vertical Pillar: Azure to Royal Blue -->
+    <linearGradient id="e_stem" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#60A5FA" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+
+    <!-- Horizontal Bars: Sky to Electric Blue -->
+    <linearGradient id="e_bars" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#2563EB" />
+    </linearGradient>
+
+    <!-- Specular Shine -->
+    <linearGradient id="e_shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75" />
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Drop Shadow Filters -->
+    <filter id="e_squircle_shadow" x="-15%" y="-10%" width="130%" height="135%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#000000" flood-opacity="0.4" />
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.25" />
+    </filter>
+
+    <!-- 3D Layer Overlap Shadow for Vertical Pillar -->
+    <filter id="e_layer_shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#030712" flood-opacity="0.65" />
+    </filter>
+  </defs>
+
+  <!-- Base Squircle with Soft Shadow -->
+  <g filter="url(#e_squircle_shadow)">
+    <rect x="10" y="10" width="108" height="108" rx="26" fill="url(#e_bg)" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1.6" />
+    <!-- 1px Subtle Glass Rim Highlight -->
+    <rect x="10.5" y="10.5" width="107" height="107" rx="25.5" fill="none" stroke="url(#e_rim)" stroke-width="1.2" />
+  </g>
+
+  <!-- Ambient Light Aura behind Letter E -->
+  <rect x="10" y="10" width="108" height="108" rx="26" fill="url(#e_ambient)" />
+
+  <!-- Monogram E Structure -->
+  <g id="monogram_e">
+    <!-- Horizontal Bars (Lower Layer using rounded rects for rock-solid cross-platform rendering) -->
+    <!-- Top Bar -->
+    <rect x="36" y="30" width="56" height="13" rx="6.5" fill="url(#e_bars)" />
+    <!-- Middle Bar -->
+    <rect x="36" y="58" width="46" height="12" rx="6" fill="url(#e_bars)" />
+    <!-- Bottom Bar -->
+    <rect x="36" y="85" width="56" height="13" rx="6.5" fill="url(#e_bars)" />
+
+    <!-- Vertical Pillar (Overlapping Layer with Soft Shadow) -->
+    <g filter="url(#e_layer_shadow)">
+      <rect x="34" y="29.5" width="14" height="69" rx="7" fill="url(#e_stem)" />
+      <!-- Specular Highlight line -->
+      <line x1="41" y1="36" x2="41" y2="65" stroke="url(#e_shine)" stroke-width="2" stroke-linecap="round" opacity="0.7" />
+    </g>
+
+    <!-- Soft accent lights -->
+    <circle cx="85.5" cy="36.5" r="4.5" fill="#BFDBFE" opacity="0.45" />
+    <circle cx="76" cy="64" r="4" fill="#BFDBFE" opacity="0.45" />
+    <circle cx="85.5" cy="91.5" r="4.5" fill="#BFDBFE" opacity="0.45" />
+  </g>
+</svg>

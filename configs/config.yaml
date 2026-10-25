@@ -1,0 +1,29 @@
+# Cấu hình bộ gõ tiếng Việt NepKey
+# Kiểu gõ: "Telex 2", "Telex", "VNI", "VIQR"
+input_method: "Telex 2"
+
+# Cơ chế xuất ký tự Unicode:
+# - "clipboard": Dùng Atomic Clipboard Injection (Shift+Insert) tương thích hoàn hảo Chrome, Zalo, Terminal
+# - "hex": Dùng chuẩn Linux native Ctrl+Shift+U <hex> Enter (chỉ phù hợp GTK thuần)
+output_method: "clipboard"
+
+# Thiết bị bàn phím: "auto" (lắng nghe tất cả bàn phím cùng lúc) hoặc đường dẫn cụ thể /dev/input/...
+device_path: "auto"
+
+# Đường dẫn uinput
+uinput_path: "/dev/uinput"
+
+# Phím tắt bật/tắt bộ gõ tiếng Việt
+toggle_key: "Ctrl+Space"
+
+# Trạng thái mặc định khi khởi động (true = bật gõ tiếng Việt, false = gõ tiếng Anh)
+enabled: true
+
+# Tùy chọn đặt dấu & chính tả
+free_tone_marking: true   # Bỏ dấu tự do (đặt dấu ở bất kỳ đâu trong từ)
+modern_tone_style: true   # Đặt dấu kiểu mới (òa, òe, ùy thay vì oà, oè, uỳ)
+auto_correct: true        # Tự động sửa lỗi chính tả
+
+# Tính năng gõ tắt (Macro)
+macro_enabled: true
+macro_file: "configs/macros.yaml"

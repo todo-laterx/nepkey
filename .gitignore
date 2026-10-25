@@ -1,0 +1,51 @@
+# Binaries and build artifacts
+/dist/
+/nepkey
+/nepkey-ibus
+*.deb
+*.rpm
+*.tar.gz
+*.bin
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+env/
+venv/
+.venv/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.playwright-mcp/

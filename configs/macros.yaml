@@ -1,0 +1,11 @@
+# Danh sách từ gõ tắt NepKey (Macro)
+# Cú pháp:
+#   <từ_viết_tắt>: "<từ_thay_thế>"
+vn: "Việt Nam"
+hn: "Hà Nội"
+hcm: "Hồ Chí Minh"
+dc: "được"
+ko: "không"
+ntn: "như thế nào"
+bt: "bình thường"
+ok: "đồng ý"
