@@ -54,6 +54,10 @@ const (
 
 	// Backspace evdev keycode (XKB keycode 22 - 8 = 14)
 	EvdevKeyBackSpace uint32 = 14
+
+	// Real BackSpace key events carry the XKB keycode (evdev + 8) on both X11
+	// and Wayland, so synthetic corrections must use 22, not 14.
+	XKBKeyBackSpace uint32 = 22
 )
 
 // NepKeyEngine implements a Zero-Underline Preedit IBus input method engine
@@ -77,9 +81,10 @@ type NepKeyEngine struct {
 	inputPurpose     uint32 // current field input purpose (e.g. password field)
 	inputHints       uint32 // current field input hints
 
-	asciiFastPath        bool // forward pure-ASCII keystrokes without preedit (Chrome Omnibox Enter/Tab)
-	forwardedLen         int  // runes of the current buffer already forwarded to the client
-	correctionBackspaces int  // synthetic BackSpaces requested (observable in tests)
+	asciiFastPath        bool   // forward pure-ASCII keystrokes without preedit (Chrome Omnibox Enter/Tab)
+	forwardedLen         int    // runes of the current buffer already forwarded to the client
+	correctionBackspaces int    // synthetic BackSpaces requested (observable in tests)
+	bsKeycode            uint32 // keycode for synthetic BackSpace, learned from real events
 }
 
 // NewNepKeyEngine creates a new instance of NepKeyEngine
@@ -121,6 +126,7 @@ func NewNepKeyEngine(conn *dbus.Conn, objectPath dbus.ObjectPath, cfg *config.Co
 		lastSyncCheck:  time.Now(),
 		atWordBoundary: true,
 		asciiFastPath:  cfg.AsciiFastPath,
+		bsKeycode:      XKBKeyBackSpace,
 	}
 }
 
@@ -223,7 +229,7 @@ func (e *NepKeyEngine) sendBackspaces(n int) {
 	e.correctionBackspaces += n
 	if e.conn != nil {
 		for i := 0; i < n; i++ {
-			e.ForwardKeyEvent(IBusKeyBackSpace, EvdevKeyBackSpace, 0)
+			e.ForwardKeyEvent(IBusKeyBackSpace, e.bsKeycode, 0)
 		}
 	}
 }
@@ -282,6 +288,9 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 	if keyval >= 0xff00 {
 		switch keyval {
 		case IBusKeyBackSpace:
+			if keycode != 0 {
+				e.bsKeycode = keycode
+			}
 			if e.rawTokenMode {
 				if e.slashCommandLen > 0 {
 					e.slashCommandLen--
