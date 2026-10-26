@@ -1,9 +1,14 @@
 package ibus
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -83,18 +88,21 @@ type NepKeyEngine struct {
 	inputPurpose     uint32 // current field input purpose (e.g. password field)
 	inputHints       uint32 // current field input hints
 
-	asciiFastPath        bool     // forward pure-ASCII keystrokes without preedit (Chrome Omnibox Enter/Tab)
-	forwardedLen         int      // runes of the current buffer already forwarded to the client
-	correctionBackspaces int      // synthetic BackSpaces requested (observable in tests)
-	correctionDeletes    int      // surrounding-text deletions requested (observable in tests)
-	bsKeycode            uint32   // keycode for synthetic BackSpace, learned from real events
-	clientCaps           uint32   // IBus capabilities reported by the focused client
-	engineName           string   // "nepkey" (Vietnamese) or "nepkey-en" (English passthrough)
-	wordFastPath         bool     // latched at word start: fast-path for the whole word or not
-	restoreCommits       int      // prefix restores after preedit abandon (observable in tests)
-	switchRequests       []string // SetGlobalEngine targets requested (observable in tests)
-	commitLog            []string // every non-empty commit request (observable in tests)
-	preeditHides         int      // HidePreeditText requests (observable in tests)
+	asciiFastPath        bool         // forward pure-ASCII keystrokes without preedit (Chrome Omnibox Enter/Tab)
+	forwardedLen         int          // runes of the current buffer already forwarded to the client
+	correctionBackspaces int          // synthetic BackSpaces requested (observable in tests)
+	correctionDeletes    int          // surrounding-text deletions requested (observable in tests)
+	bsKeycode            uint32       // keycode for synthetic BackSpace, learned from real events
+	clientCaps           uint32       // IBus capabilities reported by the focused client
+	engineName           string       // "nepkey" (Vietnamese) or "nepkey-en" (English passthrough)
+	wordFastPath         bool         // latched at word start: fast-path for the whole word or not
+	restoreCommits       int          // prefix restores after preedit abandon (observable in tests)
+	switchRequests       []string     // SetGlobalEngine targets requested (observable in tests)
+	commitLog            []string     // every non-empty commit request (observable in tests)
+	preeditHides         int          // HidePreeditText requests (observable in tests)
+	dbg                  *os.File     // opt-in debug sink (config debug_log or NEPKEY_DEBUG)
+	focusClass           atomic.Value // WM_CLASS of the focused X11 window ("" when unknown)
+	focusSeq             atomic.Uint64
 }
 
 // NewNepKeyEngine creates a new instance of NepKeyEngine
@@ -123,7 +131,7 @@ func NewNepKeyEngine(conn *dbus.Conn, objectPath dbus.ObjectPath, cfg *config.Co
 	}
 	eng.SetOptions(cfg.FreeToneMarking, cfg.ModernToneStyle, cfg.AutoCorrect, cfg.MacroEnabled, macroMap)
 
-	return &NepKeyEngine{
+	e := &NepKeyEngine{
 		conn:           conn,
 		Engine:         ibus.BaseEngine(conn, objectPath),
 		eng:            eng,
@@ -138,6 +146,46 @@ func NewNepKeyEngine(conn *dbus.Conn, objectPath dbus.ObjectPath, cfg *config.Co
 		asciiFastPath:  cfg.AsciiFastPath,
 		bsKeycode:      XKBKeyBackSpace,
 	}
+	e.focusClass.Store("")
+	if cfg.DebugLog || os.Getenv("NEPKEY_DEBUG") != "" {
+		e.setDebug(true)
+	}
+	return e
+}
+
+// debugPath is where opt-in diagnostics are written.
+func debugPath() string {
+	if p := os.Getenv("NEPKEY_DEBUG_FILE"); p != "" {
+		return p
+	}
+	return "/tmp/nepkey-debug.log"
+}
+
+// setDebug opens or closes the diagnostics sink. Off by default so a normal
+// install never writes logs; config debug_log or NEPKEY_DEBUG enables it.
+func (e *NepKeyEngine) setDebug(enable bool) {
+	if !enable {
+		if e.dbg != nil {
+			_ = e.dbg.Close()
+			e.dbg = nil
+		}
+		return
+	}
+	if e.dbg != nil {
+		return
+	}
+	if f, err := os.OpenFile(debugPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+		e.dbg = f
+	}
+}
+
+// dbgf writes one timestamped diagnostic line when debug is enabled.
+func (e *NepKeyEngine) dbgf(format string, args ...interface{}) {
+	if e.dbg == nil {
+		return
+	}
+	line := fmt.Sprintf("%s "+format+"\n", append([]interface{}{time.Now().Format("15:04:05.000")}, args...)...)
+	_, _ = e.dbg.WriteString(line)
 }
 
 // syncSettingsIfModified checks if config.yaml or macros.yaml has been updated
@@ -155,8 +203,12 @@ func (e *NepKeyEngine) syncSettingsIfModified(force bool) {
 			if newCfg, err := config.LoadConfig(e.configFilePath); err == nil {
 				e.configModTime = fi.ModTime()
 				methodChanged := newCfg.InputMethod != e.cfg.InputMethod
+				debugChanged := newCfg.DebugLog != e.cfg.DebugLog
 				e.cfg = newCfg
 				e.asciiFastPath = newCfg.AsciiFastPath
+				if debugChanged {
+					e.setDebug(newCfg.DebugLog || os.Getenv("NEPKEY_DEBUG") != "")
+				}
 				e.enabled = newCfg.Enabled
 				if methodChanged {
 					e.eng.SetInputMethod(newCfg.InputMethod)
@@ -245,8 +297,71 @@ func (e *NepKeyEngine) resetBufferState() {
 // would mix preedit and forwarded state in one word and corrupt it.
 func (e *NepKeyEngine) latchWordMode(wasEmpty bool) {
 	if wasEmpty {
-		e.wordFastPath = e.asciiFastPath && e.clientCaps&IBusCapSurroundingText != 0
+		class, _ := e.focusClass.Load().(string)
+		e.wordFastPath = e.asciiFastPath &&
+			e.clientCaps&IBusCapSurroundingText != 0 &&
+			!e.blockedClass(class)
+		e.dbgf("LATCH fast=%v class=%q", e.wordFastPath, class)
 	}
+}
+
+// blockedClass reports whether the focused X11 window class is on the
+// fast-path blocklist (apps that advertise surrounding-text but ignore the
+// deletion, e.g. Zalo). Unknown classes (Wayland-native apps) are allowed.
+func (e *NepKeyEngine) blockedClass(class string) bool {
+	if class == "" {
+		return false
+	}
+	c := strings.ToLower(class)
+	for _, b := range e.cfg.FastPathBlock {
+		b = strings.ToLower(strings.TrimSpace(b))
+		if b != "" && strings.Contains(c, b) {
+			return true
+		}
+	}
+	return false
+}
+
+var wmClassQuoted = regexp.MustCompile(`"([^"]*)"`)
+
+// queryFocusClass reads the WM_CLASS of the currently active X11 window.
+// Wayland-native clients (the usual case for browsers and Electron on GNOME)
+// expose no X11 class, so the caller treats "" as "allow".
+func queryFocusClass() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "xprop", "-root", "_NET_ACTIVE_WINDOW").Output()
+	if err != nil {
+		return ""
+	}
+	idMatch := regexp.MustCompile(`0x[0-9a-fA-F]+`).FindString(string(out))
+	if idMatch == "" {
+		return ""
+	}
+	out, err = exec.CommandContext(ctx, "xprop", "-id", idMatch, "WM_CLASS").Output()
+	if err != nil {
+		return ""
+	}
+	matches := wmClassQuoted.FindAllStringSubmatch(string(out), -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	return matches[len(matches)-1][1]
+}
+
+// captureFocusClass resolves the focused app after the window manager has
+// settled, and drops the result if focus moved again meanwhile.
+func (e *NepKeyEngine) captureFocusClass(seq uint64) {
+	time.Sleep(250 * time.Millisecond)
+	if e.focusSeq.Load() != seq {
+		return
+	}
+	class := queryFocusClass()
+	if e.focusSeq.Load() != seq {
+		return
+	}
+	e.focusClass.Store(class)
+	e.dbgf("FOCUS-CLASS class=%q blocked=%v", class, e.blockedClass(class))
 }
 
 // sendBackspaces forwards n synthetic BackSpace key events to the client.
@@ -256,6 +371,7 @@ func (e *NepKeyEngine) sendBackspaces(n int) {
 	if n <= 0 {
 		return
 	}
+	e.dbgf("ERASE-BS n=%d keycode=%d caps=%d", n, e.bsKeycode, e.clientCaps)
 	e.correctionBackspaces += n
 	if e.conn != nil {
 		for i := 0; i < n; i++ {
@@ -273,6 +389,7 @@ func (e *NepKeyEngine) eraseForwarded(n int) {
 		return
 	}
 	if e.clientCaps&IBusCapSurroundingText != 0 {
+		e.dbgf("ERASE-DTS n=%d caps=%d", n, e.clientCaps)
 		e.correctionDeletes += n
 		if e.conn != nil {
 			e.DeleteSurroundingText(int32(-n), uint32(n))
@@ -313,6 +430,8 @@ func isRawTokenContinuation(r rune) bool {
 func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint32) (bool, *dbus.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.dbgf("KEY keyval=%d keycode=%d state=%d caps=%d purpose=%d eng=%s buf=%q fwd=%d",
+		keyval, keycode, state, e.clientCaps, e.inputPurpose, e.engineName, e.eng.GetWordBuffer(), e.forwardedLen)
 
 	// 1. Ignore key release events
 	if (state & IBusReleaseMask) != 0 {
@@ -612,11 +731,14 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 		e.hidePreedit()
 		if oldLen > 0 && e.forwardedLen == 0 {
 			e.restoreCommits++
+			e.dbgf("RESTORE buf=%q", string(newRunes[:len(newRunes)-1]))
 			e.commit(string(newRunes[:len(newRunes)-1]))
 		}
+		e.dbgf("FAST-FWD buf=%q fwd=%d", buf, len(newRunes))
 		e.forwardedLen = len(newRunes)
 		return false, nil
 	}
+	e.dbgf("COMPOSE buf=%q fwd=%d", buf, e.forwardedLen)
 	e.switchToComposing()
 	e.updatePreedit(buf)
 	return true, nil
@@ -647,6 +769,12 @@ func (e *NepKeyEngine) FocusIn() *dbus.Error {
 	e.setRawMode(false)
 	e.atWordBoundary = true
 	e.syncSettingsIfModified(true)
+	e.dbgf("FOCUS-IN eng=%s caps=%d", e.engineName, e.clientCaps)
+	// Resolve now so the first word after an app switch is already classified,
+	// then re-check shortly after in case the window manager updated late.
+	e.focusClass.Store(queryFocusClass())
+	seq := e.focusSeq.Add(1)
+	go e.captureFocusClass(seq)
 	methodName := e.cfg.InputMethod
 	e.mu.Unlock()
 
@@ -685,6 +813,7 @@ func (e *NepKeyEngine) FocusOut() *dbus.Error {
 	e.atWordBoundary = true
 	e.inputPurpose = IBusPurposeFreeForm
 	e.inputHints = 0
+	e.dbgf("FOCUS-OUT eng=%s buf=%q fwd=%d", e.engineName, e.eng.GetWordBuffer(), e.forwardedLen)
 	e.commitBuffer()
 	return nil
 }
@@ -696,6 +825,7 @@ func (e *NepKeyEngine) SetContentType(purpose uint32, hints uint32) *dbus.Error 
 	defer e.mu.Unlock()
 	e.inputPurpose = purpose
 	e.inputHints = hints
+	e.dbgf("CONTENT purpose=%d hints=%d", purpose, hints)
 	if purpose == IBusPurposePassword || purpose == IBusPurposePin || (hints&IBusHintHiddenText) != 0 {
 		e.setRawMode(false)
 		e.commitBuffer()
@@ -776,5 +906,6 @@ func (e *NepKeyEngine) SetCapabilities(cap uint32) *dbus.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.clientCaps = cap
+	e.dbgf("CAPS caps=%d eng=%s", cap, e.engineName)
 	return nil
 }

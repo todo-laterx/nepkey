@@ -9,19 +9,21 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	InputMethod     string `yaml:"input_method"`      // "Telex 2", "Telex", "VNI", "VIQR"
-	Charset         string `yaml:"charset"`           // "Unicode", "Unicode tổ hợp", "TCVN3 (ABC)", "VNI Windows"
-	OutputMethod    string `yaml:"output_method"`     // "hex", "clipboard"
-	DevicePath      string `yaml:"device_path"`       // "auto" or specific /dev/input/...
-	UinputPath      string `yaml:"uinput_path"`       // default "/dev/uinput"
-	ToggleKey       string `yaml:"toggle_key"`        // "Ctrl+Space", "Alt+Shift"
-	Enabled         bool   `yaml:"enabled"`           // default active status
-	FreeToneMarking bool   `yaml:"free_tone_marking"` // Bỏ dấu tự do
-	ModernToneStyle bool   `yaml:"modern_tone_style"` // Đặt dấu kiểu mới (òa, òe, ùy)
-	AutoCorrect     bool   `yaml:"auto_correct"`      // Tự động sửa lỗi chính tả
-	MacroEnabled    bool   `yaml:"macro_enabled"`     // Bật tính năng gõ tắt
-	MacroFile       string `yaml:"macro_file"`        // Đường dẫn file gõ tắt macros.yaml
-	AsciiFastPath   bool   `yaml:"ascii_fast_path"`   // Chuyển tiếp ASCII trực tiếp (thử nghiệm, Omnibox Enter/Tab)
+	InputMethod     string   `yaml:"input_method"`        // "Telex 2", "Telex", "VNI", "VIQR"
+	Charset         string   `yaml:"charset"`             // "Unicode", "Unicode tổ hợp", "TCVN3 (ABC)", "VNI Windows"
+	OutputMethod    string   `yaml:"output_method"`       // "hex", "clipboard"
+	DevicePath      string   `yaml:"device_path"`         // "auto" or specific /dev/input/...
+	UinputPath      string   `yaml:"uinput_path"`         // default "/dev/uinput"
+	ToggleKey       string   `yaml:"toggle_key"`          // "Ctrl+Space", "Alt+Shift"
+	Enabled         bool     `yaml:"enabled"`             // default active status
+	FreeToneMarking bool     `yaml:"free_tone_marking"`   // Bỏ dấu tự do
+	ModernToneStyle bool     `yaml:"modern_tone_style"`   // Đặt dấu kiểu mới (òa, òe, ùy)
+	AutoCorrect     bool     `yaml:"auto_correct"`        // Tự động sửa lỗi chính tả
+	MacroEnabled    bool     `yaml:"macro_enabled"`       // Bật tính năng gõ tắt
+	MacroFile       string   `yaml:"macro_file"`          // Đường dẫn file gõ tắt macros.yaml
+	AsciiFastPath   bool     `yaml:"ascii_fast_path"`     // Chuyển tiếp ASCII trực tiếp (thử nghiệm, Omnibox Enter/Tab)
+	DebugLog        bool     `yaml:"debug_log"`           // Ghi log gỡ lỗi ra /tmp/nepkey-debug.log
+	FastPathBlock   []string `yaml:"fast_path_blocklist"` // WM_CLASS (X11) không dùng fast-path, vd zalo, wine
 }
 
 // ResolveConfigPath locates config.yaml in user home ~/.config/nepkey or local path
@@ -77,6 +79,8 @@ func DefaultConfig() *Config {
 		AutoCorrect:     true,
 		MacroEnabled:    true,
 		MacroFile:       ResolveMacroPath("configs/macros.yaml"),
+		DebugLog:        false,
+		FastPathBlock:   []string{"zalo", "wine"},
 	}
 }
 

@@ -458,3 +458,50 @@ func TestEngineEnabledByDefault(t *testing.T) {
 		t.Fatalf("nepkey-en must start disabled")
 	}
 }
+
+func TestFastPathBlocklist_MatchesX11Class(t *testing.T) {
+	e := newFastPathEngine()
+	cases := map[string]bool{
+		"":                   false,
+		"zalo":               true,
+		"Zalo":               true,
+		"google-chrome":      false,
+		"org.gnome.Nautilus": false,
+		"wine":               true,
+		"Wine-Proton":        true,
+	}
+	for class, want := range cases {
+		if got := e.blockedClass(class); got != want {
+			t.Fatalf("blockedClass(%q) = %v, want %v", class, got, want)
+		}
+	}
+}
+
+func TestFastPathBlocklist_BlockedAppStaysLegacy(t *testing.T) {
+	e := newFastPathEngine()
+	e.focusClass.Store("zalo")
+	for i, h := range typeRunes(e, "you") {
+		if !h {
+			t.Fatalf("char %d: blocked app must stay on consuming preedit (true)", i)
+		}
+	}
+	if e.forwardedLen != 0 {
+		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
+	}
+	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
+		t.Fatalf("expected no correction, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	}
+}
+
+func TestFastPathBlocklist_AllowedAppUsesFastPath(t *testing.T) {
+	e := newFastPathEngine()
+	e.focusClass.Store("google-chrome")
+	for i, h := range typeRunes(e, "you") {
+		if h {
+			t.Fatalf("char %d: allowed app must forward (false)", i)
+		}
+	}
+	if e.forwardedLen != 3 {
+		t.Fatalf("expected forwardedLen 3, got %d", e.forwardedLen)
+	}
+}

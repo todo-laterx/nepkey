@@ -33,3 +33,10 @@ macro_file: "configs/macros.yaml"
 # giup Enter/Tab an prediction tren Chrome Omnibox trong 1 lan bam.
 # false = giu nguyen duong preedit cu (an toan).
 #ascii_fast_path: false
+
+# Ghi log go loi ra /tmp/nepkey-debug.log (mac dinh tat)
+#debug_log: false
+
+# Ung dung (WM_CLASS tren X11) khong dung ascii_fast_path,
+# vi bao surrounding-text nhung bo qua lenh xoa. Mac dinh: zalo, wine
+#fast_path_blocklist: ["zalo", "wine"]

@@ -58,7 +58,7 @@ Cơ chế chính: `pkg/ibus/engine.go` — `rawTokenMode` / `slashCommandMode` +
 
 ## Chế độ ASCII nhanh (thử nghiệm)
 
-`ascii_fast_path: true` trong `~/.config/nepkey/config.yaml` (mặc định `false`): chữ ASCII thuần được chuyển thẳng tới app, không giữ preedit, nên Enter/Tab ăn prediction trên thanh địa chỉ Chrome trong 1 lần bấm. Khi xuất hiện dấu tiếng Việt, engine tự xóa phần đã chuyển và vẽ lại preedit như cũ. Chỉ bật với app báo surrounding-text (Chrome, ô nhập GTK); terminal và app không báo dùng đường preedit cũ nên hành vi giữ nguyên.
+`ascii_fast_path: true` trong `~/.config/nepkey/config.yaml` (mặc định `false`): chữ ASCII thuần được chuyển thẳng tới app, không giữ preedit, nên Enter/Tab ăn prediction trên thanh địa chỉ Chrome trong 1 lần bấm. Khi xuất hiện dấu tiếng Việt, engine tự xóa phần đã chuyển và vẽ lại preedit như cũ. Chỉ bật với app báo surrounding-text (Chrome, ô nhập GTK); terminal và app không báo dùng đường preedit cũ nên hành vi giữ nguyên. App báo surrounding-text nhưng bỏ qua lệnh xóa (Zalo bản X11, app Wine) được tự động tắt fast-path theo WM_CLASS trong `fast_path_blocklist` (mặc định `zalo`, `wine`). Khi cần gỡ lỗi, bật `debug_log: true` để ghi `/tmp/nepkey-debug.log`.
 
 ## Known limitations
 
@@ -126,7 +126,7 @@ Sau khi chạy xong:
 
 ```bash
 bash scripts/build-deb.sh
-sudo dpkg -i dist/nepkey_1.2.0_amd64.deb
+sudo dpkg -i dist/nepkey_1.3.0_amd64.deb
 ```
 
 File `.deb` release cũng được đính kèm trong GitHub Releases trong GitHub Releases (bản mới nhất).
