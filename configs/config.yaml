@@ -10,9 +10,7 @@ output_method: "clipboard"
 # Thiết bị bàn phím: "auto" (lắng nghe tất cả bàn phím cùng lúc) hoặc đường dẫn cụ thể /dev/input/...
 device_path: "auto"
 
-# Thiết bị uinput dùng để bơm phím Enter thật sau khi chốt chữ,
-# giúp Enter/Tab ăn gợi ý (Omnibox, chat) ngay lần bấm đầu.
-# Cần user thuộc group "input" (hoặc quyền ghi /dev/uinput).
+# Đường dẫn uinput (dành cho chế độ cũ)
 uinput_path: "/dev/uinput"
 
 # Phím tắt bật/tắt bộ gõ tiếng Việt

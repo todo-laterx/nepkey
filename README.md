@@ -56,9 +56,9 @@ Cơ chế chính: `pkg/ibus/engine.go` — `rawTokenMode` / `slashCommandMode` +
 - App: GNOME Terminal, VS Code (Electron), Chrome/Firefox address bar, Slack/Discord, Claude/ChatGPT web
 - Go 1.27.1, `go test ./...` pass (xem `pkg/engine/*_test.go`, `pkg/ibus/*_test.go`)
 
-## Enter một lần bấm (kể cả khi có gợi ý)
+## Enter khi đang gõ dở
 
-Khi gõ dở một từ mà bấm Enter, engine chốt chữ rồi bơm **Enter thật** qua `/dev/uinput` sau ~45ms — phím thật nên Chrome Omnibox, Docs, chat, terminal đều nhận, và gợi ý đang chọn được chấp nhận ngay lần bấm đầu. Enter gốc bị nuốt nên không bao giờ submit hai lần; Shift+Enter vẫn là xuống dòng như native. Cần user thuộc group `input` (hoặc quyền ghi `/dev/uinput`); nếu không mở được thiết bị, NepKey tự quay về hành vi Enter tiêu chuẩn của IBus. Khi cần gỡ lỗi, bật `debug_log: true` để ghi `/tmp/nepkey-debug.log`.
+NepKey chốt từ rồi để phím Enter đi thẳng tới ứng dụng, nên chat/terminal gửi hoặc chạy đúng một lần bấm. Với danh sách gợi ý đang mở (Omnibox, ô tìm kiếm), lần Enter đầu dùng để chốt chữ — đây là hành vi IME chuẩn; chọn gợi ý bằng Tab/↓ hoặc bấm Enter lần nữa. Khi cần gỡ lỗi, bật `debug_log: true` để ghi `/tmp/nepkey-debug.log`.
 
 ## Known limitations
 

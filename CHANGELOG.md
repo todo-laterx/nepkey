@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1] - 2026-10-27
+
+- Revert Enter injection: tren vai client commit signal xu ly cham hon 45ms nen Enter bi tieu lam ket thuc composition, phai bam 2 lan. Enter quay ve hanh vi da kiem chung: commit roi tra phim cho app (chat/terminal 1 lan bam). Bo `/dev/uinput` khoi engine, xoa test injection.
+- Settings: launcher va menu Setup trong top bar uu tien `~/.local/bin/nepkey-settings` thay vi `/usr/bin` (ban .deb cu), sua loi GUI khong cap nhat sau khi build source.
+- `configs/config.yaml`: tra chu thich `uinput_path` ve mac dinh.
+
 ## [1.4.0] - 2026-10-27
 
 - Bo hoan toan `ascii_fast_path` va `fast_path_blocklist`: forward-then-erase khong the dung tren client bo qua lenh xoa (Chrome/Docs/Zalo), gay dup chu. Go luon phan code WM_CLASS/X11 va verify surrounding.

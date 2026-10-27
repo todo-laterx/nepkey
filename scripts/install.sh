@@ -59,7 +59,11 @@ echo "✓ Đã cài đặt icons vào $HOME/.local/share/icons/"
 
 # 5. Cài đặt menu desktop
 mkdir -p "$HOME/.local/share/applications"
-cp assets/nepkey-settings.desktop "$HOME/.local/share/applications/"
+sed -e "s|^Exec=nepkey-settings|Exec=$HOME/.local/bin/nepkey-settings|" \
+    assets/nepkey-settings.desktop > "$HOME/.local/share/applications/nepkey-settings.desktop"
+if command -v update-desktop-database > /dev/null 2>&1; then
+    update-desktop-database -q "$HOME/.local/share/applications" || true
+fi
 echo "✓ Đã cài đặt launcher vào $HOME/.local/share/applications/"
 
 # 6. Đăng ký IBus component XML

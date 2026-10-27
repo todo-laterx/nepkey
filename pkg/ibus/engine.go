@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 	"unicode"
@@ -78,71 +79,6 @@ type NepKeyEngine struct {
 	commitLog      []string // every non-empty commit request (observable in tests)
 	preeditHides   int      // HidePreeditText requests (observable in tests)
 	dbg            *os.File // opt-in debug sink (config debug_log or NEPKEY_DEBUG)
-
-	// Real-key injection through /dev/uinput. IBus ForwardKeyEvent is
-	// ignored by Chromium/Docs, so a delayed real Enter is the only way to
-	// make Enter select a dropdown right after the composition commits.
-	tapper       keyTapper // nil until the device is opened
-	tapperTried  bool
-	enterPending bool
-	// enterCooldownUntil suppresses re-injection right after a tap: the
-	// injected key comes back through ProcessKeyEvent as a normal Enter, and
-	// must not start another injection cycle.
-	enterCooldownUntil time.Time
-}
-
-// enterInjectDelay lets the client process CommitText before the injected
-// Enter arrives, otherwise the key only ends the composition again.
-// A package variable so tests can shorten it.
-var enterInjectDelay = 45 * time.Millisecond
-
-// ensureTapper opens the virtual keyboard lazily. Engines created outside a
-// real IBus session (tests) never touch /dev/uinput: they either provide a
-// fake tapper or keep the legacy Enter path.
-func (e *NepKeyEngine) ensureTapper() keyTapper {
-	if e.tapper != nil {
-		return e.tapper
-	}
-	if e.tapperTried || e.conn == nil {
-		return nil
-	}
-	e.tapperTried = true
-	path := "/dev/uinput"
-	if e.cfg != nil && e.cfg.UinputPath != "" {
-		path = e.cfg.UinputPath
-	}
-	t := sharedVirtualKeyboard(path)
-	if t == nil {
-		e.dbgf("UINPUT unavailable path=%s", path)
-		return nil
-	}
-	e.dbgf("UINPUT ready path=%s", path)
-	e.tapper = t
-	return t
-}
-
-// scheduleEnterTap re-emits Enter as a real key event after the commit has
-// landed. The original Enter is consumed by the caller, so the client sees
-// exactly one Enter — after the composition is gone.
-func (e *NepKeyEngine) scheduleEnterTap(t keyTapper) {
-	if e.enterPending {
-		// A second Enter while the tap is in flight would submit twice.
-		return
-	}
-	e.enterPending = true
-	go func() {
-		time.Sleep(enterInjectDelay)
-		err := t.Tap(keyReturn)
-		e.mu.Lock()
-		e.enterPending = false
-		e.enterCooldownUntil = time.Now().Add(300 * time.Millisecond)
-		if err != nil {
-			e.dbgf("ENTER-INJECT err=%v", err)
-		} else {
-			e.dbgf("ENTER-INJECT ok")
-		}
-		e.mu.Unlock()
-	}()
 }
 
 // NewNepKeyEngine creates a new instance of NepKeyEngine
@@ -404,18 +340,11 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 					e.commit(text)
 					e.resetBufferState()
 				}
-				// Single-press Enter: commit, then re-emit Enter as a real
-				// key event once the client has processed the commit.
-				// Returning false here lets an active composition swallow
-				// the key (Chrome Omnibox dropdowns, chat inputs), forcing
-				// a second press. Shift+Enter keeps the native path so
-				// newline semantics stay intact.
-				if state&IBusShiftMask == 0 && time.Now().After(e.enterCooldownUntil) {
-					if t := e.ensureTapper(); t != nil {
-						e.scheduleEnterTap(t)
-						return true, nil
-					}
-				}
+				// Commit, then let the client handle Enter itself: the app
+				// receives the key right after the preedit is cleared, so
+				// chat/terminal submit in one press. Consuming and
+				// re-injecting the key proved slower and racy on clients
+				// that process the commit signal asynchronously.
 				return false, nil
 			}
 			return false, nil
@@ -690,10 +619,23 @@ func (e *NepKeyEngine) SetContentType(purpose uint32, hints uint32) *dbus.Error 
 func (e *NepKeyEngine) PropertyActivate(propName string, propState uint32) *dbus.Error {
 	if propName == "setup" {
 		go func() {
-			_ = exec.Command("nepkey-settings").Run()
+			_ = exec.Command(settingsBinary()).Run()
 		}()
 	}
 	return nil
+}
+
+// settingsBinary prefers the user-local install (source installer) over a
+// stale system package: PATH resolution would otherwise pick /usr/bin and
+// open an outdated GUI.
+func settingsBinary() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		p := filepath.Join(home, ".local", "bin", "nepkey-settings")
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			return p
+		}
+	}
+	return "nepkey-settings"
 }
 
 // Enable enables the engine
