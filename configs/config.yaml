@@ -38,5 +38,8 @@ macro_file: "configs/macros.yaml"
 #debug_log: false
 
 # Ung dung (WM_CLASS tren X11) khong dung ascii_fast_path,
-# vi bao surrounding-text nhung bo qua lenh xoa. Mac dinh: zalo, wine
-#fast_path_blocklist: ["zalo", "wine"]
+# vi bao surrounding-text nhung bo qua lenh xoa (zalo, wine),
+# hoac terminal (VTE/Ptyxis khong co buffer de xoa: forward-then-erase
+# gay nhay chu). Terminal Wayland duoc bao ve them bang chung minh
+# surrounding-text (khong day -> giu preedit cu).
+#fast_path_blocklist: ["zalo", "wine", "gnome-terminal", "ptyxis", "kgx", "console", "alacritty", "kitty", "wezterm", "foot", "konsole", "xterm", "tilix", "terminator"]

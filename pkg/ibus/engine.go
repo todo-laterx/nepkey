@@ -94,6 +94,7 @@ type NepKeyEngine struct {
 	correctionDeletes    int          // surrounding-text deletions requested (observable in tests)
 	bsKeycode            uint32       // keycode for synthetic BackSpace, learned from real events
 	clientCaps           uint32       // IBus capabilities reported by the focused client
+	hasSurrounding       bool         // client proved surrounding-text support by pushing it (terminals never do)
 	engineName           string       // "nepkey" (Vietnamese) or "nepkey-en" (English passthrough)
 	wordFastPath         bool         // latched at word start: fast-path for the whole word or not
 	restoreCommits       int          // prefix restores after preedit abandon (observable in tests)
@@ -295,13 +296,21 @@ func (e *NepKeyEngine) resetBufferState() {
 // Clients (Electron) may report capabilities a few keystrokes late after
 // focus (e.g. caps=9 then caps=41 mid-word); re-reading caps per keystroke
 // would mix preedit and forwarded state in one word and corrupt it.
+//
+// Terminals (VTE/Ptyxis) advertise the surrounding-text capability bit but
+// never push surrounding text and ignore DeleteSurroundingText, so a
+// forward-then-erase cycle leaves ghosts and visible jumping on the PTY.
+// The fast-path is therefore armed only after the client proves support by
+// pushing surrounding text (see SetSurroundingText); terminals never do and
+// stay on the legacy preedit path even with ascii_fast_path enabled.
 func (e *NepKeyEngine) latchWordMode(wasEmpty bool) {
 	if wasEmpty {
 		class, _ := e.focusClass.Load().(string)
 		e.wordFastPath = e.asciiFastPath &&
 			e.clientCaps&IBusCapSurroundingText != 0 &&
+			e.hasSurrounding &&
 			!e.blockedClass(class)
-		e.dbgf("LATCH fast=%v class=%q", e.wordFastPath, class)
+		e.dbgf("LATCH fast=%v class=%q caps=%d hasSur=%v", e.wordFastPath, class, e.clientCaps, e.hasSurrounding)
 	}
 }
 
@@ -769,6 +778,15 @@ func (e *NepKeyEngine) FocusIn() *dbus.Error {
 	e.setRawMode(false)
 	e.atWordBoundary = true
 	e.syncSettingsIfModified(true)
+	// New focus may be a different client (e.g. terminal after browser):
+	// drop the previous surrounding proof and ask the client to push its
+	// buffer. Terminals never answer, so the first word stays legacy-safe
+	// until a supporting client (Chrome/GTK) proves DeleteSurroundingText
+	// will work.
+	e.hasSurrounding = false
+	if e.asciiFastPath && e.conn != nil {
+		e.RequireSurroundingText()
+	}
 	e.dbgf("FOCUS-IN eng=%s caps=%d", e.engineName, e.clientCaps)
 	// Resolve now so the first word after an app switch is already classified,
 	// then re-check shortly after in case the window manager updated late.
@@ -898,6 +916,20 @@ func (e *NepKeyEngine) switchEngine() {
 		obj := e.conn.Object("org.freedesktop.IBus", "/org/freedesktop/IBus")
 		obj.Call("org.freedesktop.IBus.SetGlobalEngine", 0, target)
 	}
+}
+
+// SetSurroundingText receives the client's buffer push (in response to
+// RequireSurroundingText or automatic on focus). Any push — even an empty
+// buffer from an empty field — proves the client implements surrounding
+// text, so DeleteSurroundingText corrections will work. Terminals
+// (VTE/Ptyxis) return FALSE for retrieve-surrounding and never push, so
+// hasSurrounding stays false and they keep the legacy preedit path.
+func (e *NepKeyEngine) SetSurroundingText(text dbus.Variant, cursor uint32, anchor uint32) *dbus.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.hasSurrounding = true
+	e.dbgf("SURROUNDING cursor=%d anchor=%d caps=%d", cursor, anchor, e.clientCaps)
+	return nil
 }
 
 // SetCapabilities records what the focused client supports (surrounding

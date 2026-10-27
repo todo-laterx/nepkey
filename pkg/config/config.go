@@ -80,7 +80,16 @@ func DefaultConfig() *Config {
 		MacroEnabled:    true,
 		MacroFile:       ResolveMacroPath("configs/macros.yaml"),
 		DebugLog:        false,
-		FastPathBlock:   []string{"zalo", "wine"},
+		FastPathBlock: []string{
+			"zalo", "wine",
+			// Terminals: advertise surrounding-text but ignore the deletion
+			// (PTY has no linear buffer); forward-then-erase flickers.
+			// Wayland terminals are additionally covered by the
+			// surrounding-text proof (they never push it).
+			"gnome-terminal", "ptyxis", "kgx", "console",
+			"alacritty", "kitty", "wezterm", "foot",
+			"konsole", "xterm", "tilix", "terminator",
+		},
 	}
 }
 

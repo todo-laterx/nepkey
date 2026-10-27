@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.1] - 2026-10-27
+
+- Sua nhay chu tren terminal khi bat `ascii_fast_path`: VTE/Ptyxis quang cao surrounding-text nhung khong day surrounding va bo qua lenh xoa. Fast-path gio doi ca bit capability lan bang chung day surrounding-text (`RequireSurroundingText` -> `SetSurroundingText`); terminal khong bao gio day nen luon giu preedit cu, ke ca Wayland. Tu dau sau focus giu an toan cho toi khi app chung minh ho tro.
+- Mo rong `fast_path_blocklist` mac dinh voi nhom terminal X11 (gnome-terminal, ptyxis, alacritty, kitty, ...).
+- 4 test hoi quy moi (caps nhung khong push, tone trong preedit, FocusIn reset, blocklist terminal); 46 test xanh, `go vet` sach.
+
 ## [1.3.0] - 2026-10-26
 
 - Sua loi nhan doi tien to trong Zalo: app bao surrounding-text nhung bo qua lenh xoa. Fast-path tu tat theo WM_CLASS X11 qua `fast_path_blocklist` (mac dinh `zalo`, `wine`); cac app khac giu nguyen.

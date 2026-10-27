@@ -3,17 +3,27 @@ package ibus
 import (
 	"testing"
 
+	"github.com/godbus/dbus"
+	"github.com/sarim/goibus/ibus"
 	"nepkey/pkg/config"
 )
+
+// pushSurrounding simulates a supporting client (Chrome/GTK) answering the
+// engine's RequireSurroundingText: any push — even an empty buffer — proves
+// DeleteSurroundingText will work. Terminals (VTE/Ptyxis) never push.
+func pushSurrounding(e *NepKeyEngine) {
+	e.SetSurroundingText(dbus.MakeVariant(*ibus.NewText("")), 0, 0)
+}
 
 func newFastPathEngine() *NepKeyEngine {
 	cfg := config.DefaultConfig()
 	cfg.InputMethod = "Telex 2"
 	cfg.AsciiFastPath = true
 	e := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test", cfg)
-	// Simulate a Chrome/GTK client: surrounding-text support is what arms
-	// the fast-path (terminals never set this capability).
+	// Simulate a Chrome/GTK client: capability bit + actual surrounding push
+	// together arm the fast-path (terminals may set the bit but never push).
 	e.SetCapabilities(IBusCapSurroundingText)
+	pushSurrounding(e)
 	e.eng.SetMacros(map[string]string{"vn": "Việt Nam"}, true)
 	return e
 }
@@ -205,6 +215,86 @@ func TestAsciiFastPath_TerminalStaysOnLegacyPreedit(t *testing.T) {
 	}
 	if e.correctionBackspaces != 0 || e.correctionDeletes != 0 {
 		t.Fatalf("expected no correction on legacy path, got bs=%d del=%d", e.correctionBackspaces, e.correctionDeletes)
+	}
+}
+
+func TestAsciiFastPath_ClaimsSurroundingButNeverPushesStaysLegacy(t *testing.T) {
+	// Ptyxis/VTE on Wayland: advertises the surrounding-text capability bit
+	// but never pushes surrounding text and ignores DeleteSurroundingText.
+	// Forward-then-erase would leave ghosts and visible jumping on the PTY,
+	// so the fast-path must stay off (legacy preedit) without the proof.
+	cfg := config.DefaultConfig()
+	cfg.InputMethod = "Telex 2"
+	cfg.AsciiFastPath = true
+	e := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test", cfg)
+	e.SetCapabilities(IBusCapSurroundingText)
+	// NOTE: no pushSurrounding — like a real terminal.
+	for i, h := range typeRunes(e, "plugin") {
+		if !h {
+			t.Fatalf("char %d: terminal-like client must stay on consuming preedit path (true)", i)
+		}
+	}
+	if e.forwardedLen != 0 {
+		t.Fatalf("expected forwardedLen 0 on legacy path, got %d", e.forwardedLen)
+	}
+	if e.eng.GetWordBuffer() != "plugin" {
+		t.Fatalf("expected buffer 'plugin', got %q", e.eng.GetWordBuffer())
+	}
+	if e.correctionBackspaces != 0 || e.correctionDeletes != 0 {
+		t.Fatalf("expected no correction on legacy path, got bs=%d del=%d", e.correctionBackspaces, e.correctionDeletes)
+	}
+}
+
+func TestAsciiFastPath_TerminalToneStaysInPreeditWithoutErasure(t *testing.T) {
+	// Same terminal-like client typing Vietnamese: the tone key must compose
+	// inside preedit without any eager erasure (no ghosts).
+	cfg := config.DefaultConfig()
+	cfg.InputMethod = "Telex 2"
+	cfg.AsciiFastPath = true
+	e := NewNepKeyEngine(nil, "/org/freedesktop/IBus/Engine/NepKey/test", cfg)
+	e.SetCapabilities(IBusCapSurroundingText)
+	// NOTE: no pushSurrounding — like a real terminal.
+	for i, h := range typeRunes(e, "cach") {
+		if !h {
+			t.Fatalf("char %d: legacy path must consume (true)", i)
+		}
+	}
+	if handled, _ := e.ProcessKeyEvent(uint32('s'), 0, 0); !handled {
+		t.Fatalf("expected tone key consumed (true)")
+	}
+	if e.eng.GetWordBuffer() != "cách" {
+		t.Fatalf("expected buffer 'cách', got %q", e.eng.GetWordBuffer())
+	}
+	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
+		t.Fatalf("expected no eager erasure, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	}
+	if e.forwardedLen != 0 {
+		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
+	}
+}
+
+func TestAsciiFastPath_FocusInResetsSurroundingProof(t *testing.T) {
+	// Switching focus (browser -> terminal) must drop the previous proof:
+	// the first word on the new client stays legacy until it proves support.
+	e := newFastPathEngine()
+	e.FocusIn()
+	if e.hasSurrounding {
+		t.Fatalf("expected surrounding proof reset on FocusIn")
+	}
+	for i, h := range typeRunes(e, "hi") {
+		if !h {
+			t.Fatalf("char %d: unproven client must stay legacy (true)", i)
+		}
+	}
+	if handled, _ := e.ProcessKeyEvent(IBusKeySpace, 0, 0); !handled {
+		t.Fatalf("expected Space consumed (true)")
+	}
+	// The new client proves support -> fast-path returns.
+	pushSurrounding(e)
+	for i, h := range typeRunes(e, "hi") {
+		if h {
+			t.Fatalf("char %d: proven client must forward (false)", i)
+		}
 	}
 }
 
@@ -490,6 +580,29 @@ func TestFastPathBlocklist_BlockedAppStaysLegacy(t *testing.T) {
 	}
 	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
 		t.Fatalf("expected no correction, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	}
+}
+
+func TestFastPathBlocklist_TerminalClassesBlocked(t *testing.T) {
+	e := newFastPathEngine()
+	for _, class := range []string{
+		"ptyxis", "org.gnome.Ptyxis", "gnome-terminal-server",
+		"Alacritty", "kitty", "wezterm", "foot",
+		"konsole", "xterm", "tilix", "terminator",
+	} {
+		if !e.blockedClass(class) {
+			t.Fatalf("expected terminal class %q to be blocked", class)
+		}
+	}
+	// Even with capability bit + surrounding proof, a terminal stays legacy.
+	e.focusClass.Store("ptyxis")
+	for i, h := range typeRunes(e, "you") {
+		if !h {
+			t.Fatalf("char %d: blocked terminal must stay on consuming preedit (true)", i)
+		}
+	}
+	if e.forwardedLen != 0 {
+		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
 	}
 }
 
