@@ -1,14 +1,10 @@
 package ibus
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -44,13 +40,6 @@ const (
 	IBusKeyPgUp  uint32 = 0xff55
 	IBusKeyPgDn  uint32 = 0xff56
 
-	IBusCapPreeditText     uint32 = 1 << 0
-	IBusCapAuxiliaryText   uint32 = 1 << 1
-	IBusCapLookupTable     uint32 = 1 << 2
-	IBusCapFocus           uint32 = 1 << 3
-	IBusCapProperty        uint32 = 1 << 4
-	IBusCapSurroundingText uint32 = 1 << 5
-
 	// IBusInputPurpose constants (from IBusInputPurpose enum)
 	IBusPurposeFreeForm uint32 = 0
 	IBusPurposePassword uint32 = 8
@@ -61,10 +50,6 @@ const (
 
 	// Backspace evdev keycode (XKB keycode 22 - 8 = 14)
 	EvdevKeyBackSpace uint32 = 14
-
-	// Real BackSpace key events carry the XKB keycode (evdev + 8) on both X11
-	// and Wayland, so synthetic corrections must use 22, not 14.
-	XKBKeyBackSpace uint32 = 22
 )
 
 // NepKeyEngine implements a Zero-Underline Preedit IBus input method engine
@@ -88,21 +73,76 @@ type NepKeyEngine struct {
 	inputPurpose     uint32 // current field input purpose (e.g. password field)
 	inputHints       uint32 // current field input hints
 
-	asciiFastPath        bool         // forward pure-ASCII keystrokes without preedit (Chrome Omnibox Enter/Tab)
-	forwardedLen         int          // runes of the current buffer already forwarded to the client
-	correctionBackspaces int          // synthetic BackSpaces requested (observable in tests)
-	bsKeycode            uint32       // keycode for synthetic BackSpace, learned from real events
-	clientCaps           uint32       // IBus capabilities reported by the focused client
-	hasSurrounding       bool         // client proved surrounding-text support by pushing it (terminals never do)
-	engineName           string       // "nepkey" (Vietnamese) or "nepkey-en" (English passthrough)
-	wordFastPath         bool         // latched at word start: fast-path for the whole word or not
-	restoreCommits       int          // prefix restores after preedit abandon (observable in tests)
-	switchRequests       []string     // SetGlobalEngine targets requested (observable in tests)
-	commitLog            []string     // every non-empty commit request (observable in tests)
-	preeditHides         int          // HidePreeditText requests (observable in tests)
-	dbg                  *os.File     // opt-in debug sink (config debug_log or NEPKEY_DEBUG)
-	focusClass           atomic.Value // WM_CLASS of the focused X11 window ("" when unknown)
-	focusSeq             atomic.Uint64
+	engineName     string   // "nepkey" (Vietnamese) or "nepkey-en" (English passthrough)
+	switchRequests []string // SetGlobalEngine targets requested (observable in tests)
+	commitLog      []string // every non-empty commit request (observable in tests)
+	preeditHides   int      // HidePreeditText requests (observable in tests)
+	dbg            *os.File // opt-in debug sink (config debug_log or NEPKEY_DEBUG)
+
+	// Real-key injection through /dev/uinput. IBus ForwardKeyEvent is
+	// ignored by Chromium/Docs, so a delayed real Enter is the only way to
+	// make Enter select a dropdown right after the composition commits.
+	tapper       keyTapper // nil until the device is opened
+	tapperTried  bool
+	enterPending bool
+	// enterCooldownUntil suppresses re-injection right after a tap: the
+	// injected key comes back through ProcessKeyEvent as a normal Enter, and
+	// must not start another injection cycle.
+	enterCooldownUntil time.Time
+}
+
+// enterInjectDelay lets the client process CommitText before the injected
+// Enter arrives, otherwise the key only ends the composition again.
+// A package variable so tests can shorten it.
+var enterInjectDelay = 45 * time.Millisecond
+
+// ensureTapper opens the virtual keyboard lazily. Engines created outside a
+// real IBus session (tests) never touch /dev/uinput: they either provide a
+// fake tapper or keep the legacy Enter path.
+func (e *NepKeyEngine) ensureTapper() keyTapper {
+	if e.tapper != nil {
+		return e.tapper
+	}
+	if e.tapperTried || e.conn == nil {
+		return nil
+	}
+	e.tapperTried = true
+	path := "/dev/uinput"
+	if e.cfg != nil && e.cfg.UinputPath != "" {
+		path = e.cfg.UinputPath
+	}
+	t := sharedVirtualKeyboard(path)
+	if t == nil {
+		e.dbgf("UINPUT unavailable path=%s", path)
+		return nil
+	}
+	e.dbgf("UINPUT ready path=%s", path)
+	e.tapper = t
+	return t
+}
+
+// scheduleEnterTap re-emits Enter as a real key event after the commit has
+// landed. The original Enter is consumed by the caller, so the client sees
+// exactly one Enter — after the composition is gone.
+func (e *NepKeyEngine) scheduleEnterTap(t keyTapper) {
+	if e.enterPending {
+		// A second Enter while the tap is in flight would submit twice.
+		return
+	}
+	e.enterPending = true
+	go func() {
+		time.Sleep(enterInjectDelay)
+		err := t.Tap(keyReturn)
+		e.mu.Lock()
+		e.enterPending = false
+		e.enterCooldownUntil = time.Now().Add(300 * time.Millisecond)
+		if err != nil {
+			e.dbgf("ENTER-INJECT err=%v", err)
+		} else {
+			e.dbgf("ENTER-INJECT ok")
+		}
+		e.mu.Unlock()
+	}()
 }
 
 // NewNepKeyEngine creates a new instance of NepKeyEngine
@@ -143,10 +183,7 @@ func NewNepKeyEngine(conn *dbus.Conn, objectPath dbus.ObjectPath, cfg *config.Co
 		macroModTime:   modTime,
 		lastSyncCheck:  time.Now(),
 		atWordBoundary: true,
-		asciiFastPath:  cfg.AsciiFastPath,
-		bsKeycode:      XKBKeyBackSpace,
 	}
-	e.focusClass.Store("")
 	if cfg.DebugLog || os.Getenv("NEPKEY_DEBUG") != "" {
 		e.setDebug(true)
 	}
@@ -205,7 +242,6 @@ func (e *NepKeyEngine) syncSettingsIfModified(force bool) {
 				methodChanged := newCfg.InputMethod != e.cfg.InputMethod
 				debugChanged := newCfg.DebugLog != e.cfg.DebugLog
 				e.cfg = newCfg
-				e.asciiFastPath = newCfg.AsciiFastPath
 				if debugChanged {
 					e.setDebug(newCfg.DebugLog || os.Getenv("NEPKEY_DEBUG") != "")
 				}
@@ -274,153 +310,16 @@ func (e *NepKeyEngine) updatePreedit(text string) {
 	}
 }
 
-// unforwarded returns the suffix of the current word buffer that the client
-// has not received yet (empty when everything was forwarded eagerly).
-func (e *NepKeyEngine) unforwarded() string {
-	buf := []rune(e.eng.GetWordBuffer())
-	if e.forwardedLen >= len(buf) {
-		return ""
-	}
-	return string(buf[e.forwardedLen:])
-}
-
-// resetBufferState clears both the composition buffer and fast-path accounting.
+// resetBufferState clears the composition buffer.
 func (e *NepKeyEngine) resetBufferState() {
 	e.eng.Reset()
-	e.forwardedLen = 0
-	e.wordFastPath = false
-}
-
-// latchWordMode freezes the fast-path decision for the word being started.
-// Clients (Electron) may report capabilities a few keystrokes late after
-// focus (e.g. caps=9 then caps=41 mid-word); re-reading caps per keystroke
-// would mix preedit and forwarded state in one word and corrupt it.
-//
-// Terminals (VTE/Ptyxis) advertise the surrounding-text capability bit but
-// never push surrounding text and ignore DeleteSurroundingText, so a
-// forward-then-erase cycle leaves ghosts and visible jumping on the PTY.
-// The fast-path is therefore armed only after the client proves it is a real
-// text field by pushing surrounding text (see SetSurroundingText); terminals
-// never do and stay on the legacy preedit path even with ascii_fast_path
-// enabled. Erasure itself always uses synthetic BackSpace key events, which
-// every client honors (unlike DeleteSurroundingText, which several clients
-// silently ignore and cause duplicated text).
-func (e *NepKeyEngine) latchWordMode(wasEmpty bool) {
-	if wasEmpty {
-		class, _ := e.focusClass.Load().(string)
-		e.wordFastPath = e.asciiFastPath &&
-			e.clientCaps&IBusCapSurroundingText != 0 &&
-			e.hasSurrounding &&
-			!e.blockedClass(class)
-		e.dbgf("LATCH fast=%v class=%q caps=%d hasSur=%v", e.wordFastPath, class, e.clientCaps, e.hasSurrounding)
-	}
-}
-
-// blockedClass reports whether the focused X11 window class is on the
-// fast-path blocklist (apps that advertise surrounding-text but ignore the
-// deletion, e.g. Zalo). Unknown classes (Wayland-native apps) are allowed.
-func (e *NepKeyEngine) blockedClass(class string) bool {
-	if class == "" {
-		return false
-	}
-	c := strings.ToLower(class)
-	for _, b := range e.cfg.FastPathBlock {
-		b = strings.ToLower(strings.TrimSpace(b))
-		if b != "" && strings.Contains(c, b) {
-			return true
-		}
-	}
-	return false
-}
-
-var wmClassQuoted = regexp.MustCompile(`"([^"]*)"`)
-
-// queryFocusClass reads the WM_CLASS of the currently active X11 window.
-// Wayland-native clients (the usual case for browsers and Electron on GNOME)
-// expose no X11 class, so the caller treats "" as "allow".
-func queryFocusClass() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "xprop", "-root", "_NET_ACTIVE_WINDOW").Output()
-	if err != nil {
-		return ""
-	}
-	idMatch := regexp.MustCompile(`0x[0-9a-fA-F]+`).FindString(string(out))
-	if idMatch == "" {
-		return ""
-	}
-	out, err = exec.CommandContext(ctx, "xprop", "-id", idMatch, "WM_CLASS").Output()
-	if err != nil {
-		return ""
-	}
-	matches := wmClassQuoted.FindAllStringSubmatch(string(out), -1)
-	if len(matches) == 0 {
-		return ""
-	}
-	return matches[len(matches)-1][1]
-}
-
-// captureFocusClass resolves the focused app after the window manager has
-// settled, and drops the result if focus moved again meanwhile.
-func (e *NepKeyEngine) captureFocusClass(seq uint64) {
-	time.Sleep(250 * time.Millisecond)
-	if e.focusSeq.Load() != seq {
-		return
-	}
-	class := queryFocusClass()
-	if e.focusSeq.Load() != seq {
-		return
-	}
-	e.focusClass.Store(class)
-	e.dbgf("FOCUS-CLASS class=%q blocked=%v", class, e.blockedClass(class))
-}
-
-// sendBackspaces forwards n synthetic BackSpace key events to the client.
-// Forwarded keys go to the application, never back into ProcessKeyEvent.
-// With nil conn (unit tests) only the observable counter advances.
-func (e *NepKeyEngine) sendBackspaces(n int) {
-	if n <= 0 {
-		return
-	}
-	e.dbgf("ERASE-BS n=%d keycode=%d caps=%d", n, e.bsKeycode, e.clientCaps)
-	e.correctionBackspaces += n
-	if e.conn != nil {
-		for i := 0; i < n; i++ {
-			e.ForwardKeyEvent(IBusKeyBackSpace, e.bsKeycode, 0)
-		}
-	}
-}
-
-// eraseForwarded removes n already-forwarded runes before the cursor.
-//
-// This always uses synthetic BackSpace key events, never
-// DeleteSurroundingText: several clients (Chrome/Docs, Zalo, terminals)
-// advertise the surrounding-text capability yet silently ignore the delete
-// request, leaving the forwarded prefix behind and duplicating text.
-// BackSpace is an ordinary key event every client honors, so the correction
-// always lands. Terminals never reach this path anyway: without a
-// surrounding-text push they stay on the legacy preedit path.
-func (e *NepKeyEngine) eraseForwarded(n int) {
-	e.sendBackspaces(n)
-}
-
-// switchToComposing erases the eagerly forwarded prefix from the client so the
-// whole word can be redrawn as preedit. No-op when nothing was forwarded.
-func (e *NepKeyEngine) switchToComposing() {
-	if e.forwardedLen > 0 {
-		e.hidePreedit()
-		e.eraseForwarded(e.forwardedLen)
-		e.forwardedLen = 0
-	}
 }
 
 func (e *NepKeyEngine) commitBuffer() {
 	if e.eng.HasBuffer() {
-		tail := e.unforwarded()
+		text := e.eng.GetWordBuffer()
 		e.hidePreedit()
-		if tail != "" {
-			e.commit(tail)
-		}
+		e.commit(text)
 		e.resetBufferState()
 	}
 }
@@ -435,8 +334,8 @@ func isRawTokenContinuation(r rune) bool {
 func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint32) (bool, *dbus.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.dbgf("KEY keyval=%d keycode=%d state=%d caps=%d purpose=%d eng=%s buf=%q fwd=%d",
-		keyval, keycode, state, e.clientCaps, e.inputPurpose, e.engineName, e.eng.GetWordBuffer(), e.forwardedLen)
+	e.dbgf("KEY keyval=%d keycode=%d state=%d purpose=%d eng=%s buf=%q",
+		keyval, keycode, state, e.inputPurpose, e.engineName, e.eng.GetWordBuffer())
 
 	// 1. Ignore key release events
 	if (state & IBusReleaseMask) != 0 {
@@ -467,9 +366,6 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 	if keyval >= 0xff00 {
 		switch keyval {
 		case IBusKeyBackSpace:
-			if keycode != 0 {
-				e.bsKeycode = keycode
-			}
 			if e.rawTokenMode {
 				if e.slashCommandLen > 0 {
 					e.slashCommandLen--
@@ -480,19 +376,6 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 				return false, nil
 			}
 			if e.eng.HasBuffer() {
-				if e.forwardedLen > 0 {
-					// Fast-path: the character is already in the client.
-					// Mirror the deletion internally and let the client delete it.
-					e.eng.OnBackspace()
-					e.forwardedLen--
-					if e.forwardedLen < 0 {
-						e.forwardedLen = 0
-					}
-					if !e.eng.HasBuffer() {
-						e.atWordBoundary = true
-					}
-					return false, nil
-				}
 				e.eng.OnBackspace()
 				buf := e.eng.GetWordBuffer()
 				if buf == "" {
@@ -512,22 +395,27 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			if e.eng.HasBuffer() {
 				e.syncSettingsIfModified(false)
 				if act := e.eng.CheckMacro(0); act != nil {
-					// Macro replacement covers the whole word: erase the
-					// eagerly forwarded prefix first to avoid duplication.
 					e.hidePreedit()
-					e.eraseForwarded(e.forwardedLen)
 					e.commit(string(act.AppendRunes))
 					e.resetBufferState()
 				} else {
-					text := e.unforwarded()
+					text := e.eng.GetWordBuffer()
 					e.hidePreedit()
 					e.commit(text)
 					e.resetBufferState()
 				}
-				// Single-press Enter: committing text AND returning false allows
-				// Web Chat, Zalo, Terminal, IDE và Chrome Omnibox search/submit
-				// trong 1 lần bấm. Tới suggestion cụ thể thì Tab/Down/click
-				// chọn trước rồi Enter (đúng native Chrome).
+				// Single-press Enter: commit, then re-emit Enter as a real
+				// key event once the client has processed the commit.
+				// Returning false here lets an active composition swallow
+				// the key (Chrome Omnibox dropdowns, chat inputs), forcing
+				// a second press. Shift+Enter keeps the native path so
+				// newline semantics stay intact.
+				if state&IBusShiftMask == 0 && time.Now().After(e.enterCooldownUntil) {
+					if t := e.ensureTapper(); t != nil {
+						e.scheduleEnterTap(t)
+						return true, nil
+					}
+				}
 				return false, nil
 			}
 			return false, nil
@@ -543,12 +431,11 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 						runes = runes[:len(runes)-1]
 					}
 					e.hidePreedit()
-					e.eraseForwarded(e.forwardedLen)
 					e.commit(string(runes))
 					e.resetBufferState()
 					return true, nil
 				}
-				text := e.unforwarded()
+				text := e.eng.GetWordBuffer()
 				e.hidePreedit()
 				e.commit(text)
 				e.resetBufferState()
@@ -560,7 +447,7 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			e.setRawMode(false)
 			e.atWordBoundary = true
 			if e.eng.HasBuffer() {
-				text := e.unforwarded()
+				text := e.eng.GetWordBuffer()
 				e.hidePreedit()
 				e.commit(text)
 				e.resetBufferState()
@@ -589,10 +476,9 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			e.syncSettingsIfModified(false)
 			if act := e.eng.CheckMacro(' '); act != nil {
 				e.hidePreedit()
-				e.eraseForwarded(e.forwardedLen)
 				e.commit(string(act.AppendRunes))
 			} else {
-				text := e.unforwarded() + " "
+				text := e.eng.GetWordBuffer() + " "
 				e.hidePreedit()
 				e.commit(text)
 			}
@@ -649,7 +535,6 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			e.atWordBoundary = false
 			_ = e.eng.ProcessKey(r)
 			if buf := e.eng.GetWordBuffer(); buf != "" {
-				e.switchToComposing()
 				e.updatePreedit(buf)
 				return true, nil
 			}
@@ -658,9 +543,7 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 		}
 		e.atWordBoundary = false
 		if e.eng.HasBuffer() {
-			// Commit only what the client has not received yet: the
-			// forwarded prefix is already on screen (e.g. "g" in "g6").
-			text := e.unforwarded()
+			text := e.eng.GetWordBuffer()
 			e.hidePreedit()
 			e.commit(text)
 			e.resetBufferState()
@@ -688,10 +571,9 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 			e.syncSettingsIfModified(false)
 			if act := e.eng.CheckMacro(r); act != nil {
 				e.hidePreedit()
-				e.eraseForwarded(e.forwardedLen)
 				e.commit(string(act.AppendRunes))
 			} else {
-				text := e.unforwarded() + string(r)
+				text := e.eng.GetWordBuffer() + string(r)
 				e.hidePreedit()
 				e.commit(text)
 			}
@@ -708,43 +590,14 @@ func (e *NepKeyEngine) ProcessKeyEvent(keyval uint32, keycode uint32, state uint
 
 	// 12. Normal Word characters (letters a-z, A-Z, etc.) - Vietnamese composition via Bamboo core
 	e.atWordBoundary = false
-	oldLen := len([]rune(e.eng.GetWordBuffer()))
-	wasEmpty := oldLen == 0
 	_ = e.eng.ProcessKey(r)
-	e.latchWordMode(wasEmpty)
 	buf := e.eng.GetWordBuffer()
 	if buf == "" {
-		// Bamboo produced nothing: buffer is empty so there is no prefix
-		// left to correct later; drop stale fast-path accounting.
+		// Bamboo produced nothing: leave the key to the client.
 		e.hidePreedit()
-		e.forwardedLen = 0
 		return false, nil
 	}
-	// ASCII fast-path (Chrome Omnibox Enter/Tab): a plain ASCII append means no
-	// Vietnamese composition is in progress, so forward the keystroke at once and
-	// never enter IME-composing state. The buffer is still tracked for tone keys.
-	// Only for clients with surrounding-text (Chrome, GTK entries): terminals
-	// (VTE) neither need it nor handle the synthetic correction reliably,
-	// so they stay on the legacy preedit path. The decision is latched at
-	// word start because caps may arrive late after focus changes.
-	newRunes := []rune(buf)
-	if e.wordFastPath && isPureASCII(buf) && len(newRunes) == oldLen+1 && newRunes[len(newRunes)-1] == r {
-		// Leaving composing state (e.g. Telex tone cancel "te"+"r"->"ter"):
-		// the erased prefix is not in the client, so re-emit everything
-		// except the current keystroke (forwarded by returning false).
-		// Without this the client ends up with "rminal" instead of "terminal".
-		e.hidePreedit()
-		if oldLen > 0 && e.forwardedLen == 0 {
-			e.restoreCommits++
-			e.dbgf("RESTORE buf=%q", string(newRunes[:len(newRunes)-1]))
-			e.commit(string(newRunes[:len(newRunes)-1]))
-		}
-		e.dbgf("FAST-FWD buf=%q fwd=%d", buf, len(newRunes))
-		e.forwardedLen = len(newRunes)
-		return false, nil
-	}
-	e.dbgf("COMPOSE buf=%q fwd=%d", buf, e.forwardedLen)
-	e.switchToComposing()
+	e.dbgf("COMPOSE buf=%q", buf)
 	e.updatePreedit(buf)
 	return true, nil
 }
@@ -774,20 +627,7 @@ func (e *NepKeyEngine) FocusIn() *dbus.Error {
 	e.setRawMode(false)
 	e.atWordBoundary = true
 	e.syncSettingsIfModified(true)
-	// New focus may be a different client (e.g. terminal after browser):
-	// drop the previous surrounding proof and ask the client to push its
-	// buffer. Terminals never answer, so the first word stays legacy-safe
-	// until a real text field (Chrome/GTK) proves itself.
-	e.hasSurrounding = false
-	if e.asciiFastPath && e.conn != nil {
-		e.RequireSurroundingText()
-	}
-	e.dbgf("FOCUS-IN eng=%s caps=%d", e.engineName, e.clientCaps)
-	// Resolve now so the first word after an app switch is already classified,
-	// then re-check shortly after in case the window manager updated late.
-	e.focusClass.Store(queryFocusClass())
-	seq := e.focusSeq.Add(1)
-	go e.captureFocusClass(seq)
+	e.dbgf("FOCUS-IN eng=%s", e.engineName)
 	methodName := e.cfg.InputMethod
 	e.mu.Unlock()
 
@@ -826,7 +666,7 @@ func (e *NepKeyEngine) FocusOut() *dbus.Error {
 	e.atWordBoundary = true
 	e.inputPurpose = IBusPurposeFreeForm
 	e.inputHints = 0
-	e.dbgf("FOCUS-OUT eng=%s buf=%q fwd=%d", e.engineName, e.eng.GetWordBuffer(), e.forwardedLen)
+	e.dbgf("FOCUS-OUT eng=%s buf=%q", e.engineName, e.eng.GetWordBuffer())
 	e.commitBuffer()
 	return nil
 }
@@ -913,26 +753,11 @@ func (e *NepKeyEngine) switchEngine() {
 	}
 }
 
-// SetSurroundingText receives the client's buffer push (in response to
-// RequireSurroundingText or automatic on focus). Any push — even an empty
-// buffer from an empty field — proves the client is a real text field whose
-// key-event corrections will be honored. Terminals (VTE/Ptyxis) return FALSE
-// for retrieve-surrounding and never push, so hasSurrounding stays false
-// and they keep the legacy preedit path.
-func (e *NepKeyEngine) SetSurroundingText(text dbus.Variant, cursor uint32, anchor uint32) *dbus.Error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.hasSurrounding = true
-	e.dbgf("SURROUNDING cursor=%d anchor=%d caps=%d", cursor, anchor, e.clientCaps)
-	return nil
-}
-
-// SetCapabilities records what the focused client supports (surrounding
-// text decides the correction mechanism) and reports engine capabilities.
+// SetCapabilities logs what the focused client supports. Kept for
+// diagnostics: no behavior depends on it anymore.
 func (e *NepKeyEngine) SetCapabilities(cap uint32) *dbus.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.clientCaps = cap
 	e.dbgf("CAPS caps=%d eng=%s", cap, e.engineName)
 	return nil
 }

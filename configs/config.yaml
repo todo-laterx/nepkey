@@ -10,7 +10,9 @@ output_method: "clipboard"
 # Thiết bị bàn phím: "auto" (lắng nghe tất cả bàn phím cùng lúc) hoặc đường dẫn cụ thể /dev/input/...
 device_path: "auto"
 
-# Đường dẫn uinput
+# Thiết bị uinput dùng để bơm phím Enter thật sau khi chốt chữ,
+# giúp Enter/Tab ăn gợi ý (Omnibox, chat) ngay lần bấm đầu.
+# Cần user thuộc group "input" (hoặc quyền ghi /dev/uinput).
 uinput_path: "/dev/uinput"
 
 # Phím tắt bật/tắt bộ gõ tiếng Việt
@@ -28,18 +30,5 @@ auto_correct: true        # Tự động sửa lỗi chính tả
 macro_enabled: true
 macro_file: "configs/macros.yaml"
 
-# Chuyen tiep ASCII truc tiep (thu nghiem, mac dinh tat):
-# true = phim chu ASCII thuan forward ngay, khong giu preedit,
-# giup Enter/Tab an prediction tren Chrome Omnibox trong 1 lan bam.
-# false = giu nguyen duong preedit cu (an toan).
-ascii_fast_path: false
-
 # Ghi log go loi ra /tmp/nepkey-debug.log (mac dinh tat)
 debug_log: false
-
-# Ung dung (WM_CLASS tren X11) khong dung ascii_fast_path,
-# vi bao surrounding-text nhung bo qua lenh xoa (zalo, wine),
-# hoac terminal (VTE/Ptyxis khong co buffer de xoa: forward-then-erase
-# gay nhay chu). Terminal Wayland duoc bao ve them bang chung minh
-# surrounding-text (khong day -> giu preedit cu).
-fast_path_blocklist: ["zalo", "wine", "gnome-terminal", "ptyxis", "kgx", "console", "alacritty", "kitty", "wezterm", "foot", "konsole", "xterm", "tilix", "terminator"]

@@ -56,9 +56,9 @@ Cơ chế chính: `pkg/ibus/engine.go` — `rawTokenMode` / `slashCommandMode` +
 - App: GNOME Terminal, VS Code (Electron), Chrome/Firefox address bar, Slack/Discord, Claude/ChatGPT web
 - Go 1.27.1, `go test ./...` pass (xem `pkg/engine/*_test.go`, `pkg/ibus/*_test.go`)
 
-## Chế độ ASCII nhanh (thử nghiệm)
+## Enter một lần bấm (kể cả khi có gợi ý)
 
-`ascii_fast_path: true` trong `~/.config/nepkey/config.yaml` (mặc định `false`): chữ ASCII thuần được chuyển thẳng tới app, không giữ preedit, nên Enter/Tab ăn prediction trên thanh địa chỉ Chrome trong 1 lần bấm. Khi xuất hiện dấu tiếng Việt, engine tự xóa phần đã chuyển và vẽ lại preedit như cũ. Fast-path chỉ bật khi app vừa báo surrounding-text vừa thực sự đẩy surrounding-text (Chrome, ô nhập GTK); terminal (VTE/Ptyxis: GNOME Terminal, Ptyxis, Alacritty, Kitty, ...) không bao giờ đẩy nên luôn giữ đường preedit cũ, không nhảy chữ — kể cả trên Wayland nơi không đọc được WM_CLASS. Từ đầu tiên sau khi chuyển focus giữ preedit an toàn cho tới khi app chứng minh hỗ trợ. App báo surrounding-text nhưng bỏ qua lệnh xóa (Zalo bản X11, app Wine) được tự động tắt fast-path theo WM_CLASS trong `fast_path_blocklist` (mặc định thêm nhóm terminal). Khi cần gỡ lỗi, bật `debug_log: true` để ghi `/tmp/nepkey-debug.log`.
+Khi gõ dở một từ mà bấm Enter, engine chốt chữ rồi bơm **Enter thật** qua `/dev/uinput` sau ~45ms — phím thật nên Chrome Omnibox, Docs, chat, terminal đều nhận, và gợi ý đang chọn được chấp nhận ngay lần bấm đầu. Enter gốc bị nuốt nên không bao giờ submit hai lần; Shift+Enter vẫn là xuống dòng như native. Cần user thuộc group `input` (hoặc quyền ghi `/dev/uinput`); nếu không mở được thiết bị, NepKey tự quay về hành vi Enter tiêu chuẩn của IBus. Khi cần gỡ lỗi, bật `debug_log: true` để ghi `/tmp/nepkey-debug.log`.
 
 ## Known limitations
 

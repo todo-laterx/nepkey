@@ -156,18 +156,6 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         grp_startup.add(self.row_enabled)
 
         page.add(grp_startup)
-
-        # Group 3: Experimental
-        grp_exp = Adw.PreferencesGroup(title="Tính năng thử nghiệm", description="Áp dụng ngay không cần khởi động lại")
-        self.row_ascii_fast = Adw.SwitchRow(
-            title="Chữ ASCII chuyển tiếp nhanh",
-            subtitle="Enter/Tab ăn gợi ý thanh địa chỉ trong 1 lần bấm (Chrome, ô nhập GTK)"
-        )
-        self.row_ascii_fast.set_active(self.cfg.get("ascii_fast_path", False))
-        self.row_ascii_fast.connect("notify::active", self.on_setting_changed)
-        grp_exp.add(self.row_ascii_fast)
-
-        page.add(grp_exp)
         self.add(page)
 
     def build_tone_page(self):
@@ -398,7 +386,6 @@ class NepKeySettingsWindow(Adw.PreferencesWindow):
         self.cfg["free_tone_marking"] = self.row_free_tone.get_active()
         self.cfg["auto_correct"] = self.row_auto_correct.get_active()
         self.cfg["macro_enabled"] = self.row_macro_enabled.get_active()
-        self.cfg["ascii_fast_path"] = self.row_ascii_fast.get_active()
 
         save_config(self.cfg)
         self.notify_daemon()

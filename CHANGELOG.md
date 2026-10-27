@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0] - 2026-10-27
+
+- Bo hoan toan `ascii_fast_path` va `fast_path_blocklist`: forward-then-erase khong the dung tren client bo qua lenh xoa (Chrome/Docs/Zalo), gay dup chu. Go luon phan code WM_CLASS/X11 va verify surrounding.
+- Enter 1 lan bam khong can fast-path: khi dang go do, engine commit chu roi bom Enter that qua `/dev/uinput` sau ~45ms, nen dropdown/goi y (Omnibox, chat) duoc chap nhan ngay. Enter goc bi nuot (khong submit 2 lan), Shift+Enter giu nguyen, co cooldown 300ms chong lap; thieu quyen uinput thi tu ve hanh vi IBus cu.
+- Settings: bo cong tac "Chu ASCII chuyen tiep nhanh"; `configs/config.yaml` bo 2 khoa da xoa va ghi chu `uinput_path`.
+- 22 test xanh (them 5 test cho Enter injection), `go vet` sach.
+
 ## [1.3.3] - 2026-10-27
 
 - Sua dup chu tren Chrome/Docs khi bat `ascii_fast_path`: Chrome/Docs bat co surrounding-text nhung lo lenh xoa. Co che xoa fast-path chuyen han sang phim BackSpace gia lap (key event app nao cung hieu), bo `DeleteSurroundingText`. Cua kiem tra surrounding-proof giu nguyen de terminal o lai preedit cu.
