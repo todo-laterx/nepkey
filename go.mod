@@ -1,4 +1,4 @@
-module nepkey
+module github.com/todo-laterx/nepkey
 
 go 1.27.1
 

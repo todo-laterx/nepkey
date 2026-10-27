@@ -5,7 +5,7 @@ import (
 
 	"github.com/godbus/dbus"
 	"github.com/sarim/goibus/ibus"
-	"nepkey/pkg/config"
+	"github.com/todo-laterx/nepkey/pkg/config"
 )
 
 // pushSurrounding simulates a supporting client (Chrome/GTK) answering the

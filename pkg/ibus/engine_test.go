@@ -3,7 +3,7 @@ package ibus
 import (
 	"testing"
 
-	"nepkey/pkg/config"
+	"github.com/todo-laterx/nepkey/pkg/config"
 )
 
 func TestNepKeyEngine_TypingWorkflow(t *testing.T) {

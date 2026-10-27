@@ -3,7 +3,7 @@ package ibus
 import (
 	"testing"
 
-	"nepkey/pkg/config"
+	"github.com/todo-laterx/nepkey/pkg/config"
 )
 
 // P12 must not lose P: Telex digits are word-breaks, buffer commits then digit passes.

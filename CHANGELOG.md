@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2] - 2026-10-27
+
+- Fix `go.mod` module path `nepkey` -> `github.com/todo-laterx/nepkey` de `go install`/`go get` tu ngoai hoat dong; dong bo import + ldflags `appVersionStr`.
+- `configs/config.yaml` mau uncomment `ascii_fast_path/debug_log/fast_path_blocklist` mac dinh (hanh vi khong doi, de user nhin thay).
+- `CONTRIBUTING.md`: xoa dong copy-paste DxDataGrid, thay bang quy tac dong bo config 3 noi.
+- Them `SECURITY.md`: offline 100%, khong log keystroke mac dinh, bypass password/PIN, bao cao lo hong qua Advisory.
+- `scripts/install.sh`: check thieu `python3-gi`/`python3-yaml`, phan biet ro source installer vs `/install.sh` (.deb).
+
 ## [1.3.1] - 2026-10-27
 
 - Sua nhay chu tren terminal khi bat `ascii_fast_path`: VTE/Ptyxis quang cao surrounding-text nhung khong day surrounding va bo qua lenh xoa. Fast-path gio doi ca bit capability lan bang chung day surrounding-text (`RequireSurroundingText` -> `SetSurroundingText`); terminal khong bao gio day nen luon giu preedit cu, ke ca Wayland. Tu dau sau focus giu an toan cho toi khi app chung minh ho tro.

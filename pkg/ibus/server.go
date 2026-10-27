@@ -11,11 +11,11 @@ import (
 
 	"github.com/godbus/dbus"
 	"github.com/sarim/goibus/ibus"
-	"nepkey/pkg/config"
+	"github.com/todo-laterx/nepkey/pkg/config"
 )
 
 // appVersionStr is stamped at build time from the VERSION file:
-// go build -ldflags "-X nepkey/pkg/ibus.appVersionStr=$(cat VERSION)"
+// go build -ldflags "-X github.com/todo-laterx/nepkey/pkg/ibus.appVersionStr=$(cat VERSION)"
 var appVersionStr = "dev"
 
 // appVersion returns the release version stamped at build time.

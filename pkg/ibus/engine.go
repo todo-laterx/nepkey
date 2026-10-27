@@ -14,8 +14,8 @@ import (
 
 	"github.com/godbus/dbus"
 	"github.com/sarim/goibus/ibus"
-	"nepkey/pkg/config"
-	"nepkey/pkg/engine"
+	"github.com/todo-laterx/nepkey/pkg/config"
+	"github.com/todo-laterx/nepkey/pkg/engine"
 )
 
 const (

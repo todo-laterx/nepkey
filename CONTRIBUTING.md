@@ -17,7 +17,7 @@ bash scripts/install.sh
 2. Moi thay doi `pkg/ibus/engine.go` bat buoc kem test trong `pkg/ibus/engine_test.go` hoac `digit_regression_test.go`.
 3. Mo ta MR theo mau: van de / cach tai hien / app test (Terminal, VS Code, Chrome) tren Wayland hay X11 / ket qua `go test ./...`.
 4. Khong commit binary, `.deb`, `__pycache__`, `dist/`, `build/deb/`. Chi track source.
-5. Neu them thuoc tinh metadata/column moi cho FE, dong bo schema backend tuong ung (nguyen tac twin-component parity).
+5. Neu them option config moi, dong bo 3 noi: `DefaultConfig()` trong `pkg/config/config.go`, `configs/config.yaml` mau, va UI `cmd/nepkey-settings/main.py` (`DEFAULT_CONFIG`).
 
 ## Bao loi
 

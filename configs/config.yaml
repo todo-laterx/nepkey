@@ -32,14 +32,14 @@ macro_file: "configs/macros.yaml"
 # true = phim chu ASCII thuan forward ngay, khong giu preedit,
 # giup Enter/Tab an prediction tren Chrome Omnibox trong 1 lan bam.
 # false = giu nguyen duong preedit cu (an toan).
-#ascii_fast_path: false
+ascii_fast_path: false
 
 # Ghi log go loi ra /tmp/nepkey-debug.log (mac dinh tat)
-#debug_log: false
+debug_log: false
 
 # Ung dung (WM_CLASS tren X11) khong dung ascii_fast_path,
 # vi bao surrounding-text nhung bo qua lenh xoa (zalo, wine),
 # hoac terminal (VTE/Ptyxis khong co buffer de xoa: forward-then-erase
 # gay nhay chu). Terminal Wayland duoc bao ve them bang chung minh
 # surrounding-text (khong day -> giu preedit cu).
-#fast_path_blocklist: ["zalo", "wine", "gnome-terminal", "ptyxis", "kgx", "console", "alacritty", "kitty", "wezterm", "foot", "konsole", "xterm", "tilix", "terminator"]
+fast_path_blocklist: ["zalo", "wine", "gnome-terminal", "ptyxis", "kgx", "console", "alacritty", "kitty", "wezterm", "foot", "konsole", "xterm", "tilix", "terminator"]

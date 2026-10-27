@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"nepkey/pkg/config"
-	nepibus "nepkey/pkg/ibus"
+	"github.com/todo-laterx/nepkey/pkg/config"
+	nepibus "github.com/todo-laterx/nepkey/pkg/ibus"
 )
 
 var (

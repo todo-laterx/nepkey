@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+# NepKey source installer (build tu source).
+# Khac voi /install.sh o root (tai .deb tu Releases cho user thuong).
+# File nay danh cho dev/contributor: go build + copy vao ~/.local/bin.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DIR"
 
@@ -8,9 +11,18 @@ VERSION="$(tr -d '[:space:]' < "$DIR/VERSION")"
 
 echo "=== Cài đặt NepKey IBus ==="
 
+echo "--> Kiem tra phu thuoc Python (nepkey-settings GTK4)..."
+if ! python3 -c "import gi" 2>/dev/null; then
+    echo "CANH BAO: thieu python3-gi / gir1.2-gtk-4.0 / gir1.2-adw-1. Cai dat:"
+    echo "  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-yaml ibus"
+fi
+if ! python3 -c "import yaml" 2>/dev/null; then
+    echo "CANH BAO: thieu python3-yaml. Cai dat: sudo apt install python3-yaml"
+fi
+
 # 1. Biên dịch ứng dụng IBus
 echo "--> Đang biên dịch NepKey IBus..."
-go build -ldflags="-s -w -X nepkey/pkg/ibus.appVersionStr=${VERSION}" -o nepkey-ibus ./cmd/nepkey-ibus
+go build -ldflags="-s -w -X github.com/todo-laterx/nepkey/pkg/ibus.appVersionStr=${VERSION}" -o nepkey-ibus ./cmd/nepkey-ibus
 
 # 2. Cài đặt binary vào ~/.local/bin
 mkdir -p "$HOME/.local/bin"

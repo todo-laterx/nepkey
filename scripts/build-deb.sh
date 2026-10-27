@@ -23,7 +23,7 @@ mkdir -p "$PKG_DIR/usr/share/ibus/component"
 
 # 2. Biên dịch nhị phân IBus
 echo "Compiling optimized binary..."
-go build -ldflags="-s -w -X nepkey/pkg/ibus.appVersionStr=${VERSION}" -o "$PKG_DIR/usr/bin/nepkey-ibus" ./cmd/nepkey-ibus
+go build -ldflags="-s -w -X github.com/todo-laterx/nepkey/pkg/ibus.appVersionStr=${VERSION}" -o "$PKG_DIR/usr/bin/nepkey-ibus" ./cmd/nepkey-ibus
 chmod 755 "$PKG_DIR/usr/bin/nepkey-ibus"
 
 # Cài đặt IBus Component XML
