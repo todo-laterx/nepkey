@@ -91,7 +91,6 @@ type NepKeyEngine struct {
 	asciiFastPath        bool         // forward pure-ASCII keystrokes without preedit (Chrome Omnibox Enter/Tab)
 	forwardedLen         int          // runes of the current buffer already forwarded to the client
 	correctionBackspaces int          // synthetic BackSpaces requested (observable in tests)
-	correctionDeletes    int          // surrounding-text deletions requested (observable in tests)
 	bsKeycode            uint32       // keycode for synthetic BackSpace, learned from real events
 	clientCaps           uint32       // IBus capabilities reported by the focused client
 	hasSurrounding       bool         // client proved surrounding-text support by pushing it (terminals never do)
@@ -300,9 +299,12 @@ func (e *NepKeyEngine) resetBufferState() {
 // Terminals (VTE/Ptyxis) advertise the surrounding-text capability bit but
 // never push surrounding text and ignore DeleteSurroundingText, so a
 // forward-then-erase cycle leaves ghosts and visible jumping on the PTY.
-// The fast-path is therefore armed only after the client proves support by
-// pushing surrounding text (see SetSurroundingText); terminals never do and
-// stay on the legacy preedit path even with ascii_fast_path enabled.
+// The fast-path is therefore armed only after the client proves it is a real
+// text field by pushing surrounding text (see SetSurroundingText); terminals
+// never do and stay on the legacy preedit path even with ascii_fast_path
+// enabled. Erasure itself always uses synthetic BackSpace key events, which
+// every client honors (unlike DeleteSurroundingText, which several clients
+// silently ignore and cause duplicated text).
 func (e *NepKeyEngine) latchWordMode(wasEmpty bool) {
 	if wasEmpty {
 		class, _ := e.focusClass.Load().(string)
@@ -390,21 +392,15 @@ func (e *NepKeyEngine) sendBackspaces(n int) {
 }
 
 // eraseForwarded removes n already-forwarded runes before the cursor.
-// Clients advertising surrounding-text (Chrome, GTK entries) get a direct
-// buffer deletion, which they always honor; the rest (terminals) get
-// synthetic BackSpace key events.
+//
+// This always uses synthetic BackSpace key events, never
+// DeleteSurroundingText: several clients (Chrome/Docs, Zalo, terminals)
+// advertise the surrounding-text capability yet silently ignore the delete
+// request, leaving the forwarded prefix behind and duplicating text.
+// BackSpace is an ordinary key event every client honors, so the correction
+// always lands. Terminals never reach this path anyway: without a
+// surrounding-text push they stay on the legacy preedit path.
 func (e *NepKeyEngine) eraseForwarded(n int) {
-	if n <= 0 {
-		return
-	}
-	if e.clientCaps&IBusCapSurroundingText != 0 {
-		e.dbgf("ERASE-DTS n=%d caps=%d", n, e.clientCaps)
-		e.correctionDeletes += n
-		if e.conn != nil {
-			e.DeleteSurroundingText(int32(-n), uint32(n))
-		}
-		return
-	}
 	e.sendBackspaces(n)
 }
 
@@ -781,8 +777,7 @@ func (e *NepKeyEngine) FocusIn() *dbus.Error {
 	// New focus may be a different client (e.g. terminal after browser):
 	// drop the previous surrounding proof and ask the client to push its
 	// buffer. Terminals never answer, so the first word stays legacy-safe
-	// until a supporting client (Chrome/GTK) proves DeleteSurroundingText
-	// will work.
+	// until a real text field (Chrome/GTK) proves itself.
 	e.hasSurrounding = false
 	if e.asciiFastPath && e.conn != nil {
 		e.RequireSurroundingText()
@@ -920,10 +915,10 @@ func (e *NepKeyEngine) switchEngine() {
 
 // SetSurroundingText receives the client's buffer push (in response to
 // RequireSurroundingText or automatic on focus). Any push — even an empty
-// buffer from an empty field — proves the client implements surrounding
-// text, so DeleteSurroundingText corrections will work. Terminals
-// (VTE/Ptyxis) return FALSE for retrieve-surrounding and never push, so
-// hasSurrounding stays false and they keep the legacy preedit path.
+// buffer from an empty field — proves the client is a real text field whose
+// key-event corrections will be honored. Terminals (VTE/Ptyxis) return FALSE
+// for retrieve-surrounding and never push, so hasSurrounding stays false
+// and they keep the legacy preedit path.
 func (e *NepKeyEngine) SetSurroundingText(text dbus.Variant, cursor uint32, anchor uint32) *dbus.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()

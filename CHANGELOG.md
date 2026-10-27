@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.3] - 2026-10-27
+
+- Sua dup chu tren Chrome/Docs khi bat `ascii_fast_path`: Chrome/Docs bat co surrounding-text nhung lo lenh xoa. Co che xoa fast-path chuyen han sang phim BackSpace gia lap (key event app nao cung hieu), bo `DeleteSurroundingText`. Cua kiem tra surrounding-proof giu nguyen de terminal o lai preedit cu.
+- Test hoi quy `CorrectionUsesBackspaceEvenWithSurrounding`; 46 test xanh, `go vet` sach.
+
 ## [1.3.2] - 2026-10-27
 
 - Fix `go.mod` module path `nepkey` -> `github.com/todo-laterx/nepkey` de `go install`/`go get` tu ngoai hoat dong; dong bo import + ldflags `appVersionStr`.

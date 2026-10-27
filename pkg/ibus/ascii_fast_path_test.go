@@ -10,7 +10,8 @@ import (
 
 // pushSurrounding simulates a supporting client (Chrome/GTK) answering the
 // engine's RequireSurroundingText: any push — even an empty buffer — proves
-// DeleteSurroundingText will work. Terminals (VTE/Ptyxis) never push.
+// a real text field whose key-event corrections will be honored.
+// Terminals (VTE/Ptyxis) never push.
 func pushSurrounding(e *NepKeyEngine) {
 	e.SetSurroundingText(dbus.MakeVariant(*ibus.NewText("")), 0, 0)
 }
@@ -87,11 +88,8 @@ func TestAsciiFastPath_TransitionToComposing(t *testing.T) {
 	if e.forwardedLen != 0 {
 		t.Fatalf("expected forwardedLen reset to 0, got %d", e.forwardedLen)
 	}
-	if e.correctionDeletes != 4 {
-		t.Fatalf("expected 4 surrounding deletions, got %d", e.correctionDeletes)
-	}
-	if e.correctionBackspaces != 0 {
-		t.Fatalf("expected 0 synthetic backspaces on surrounding path, got %d", e.correctionBackspaces)
+	if e.correctionBackspaces != 4 {
+		t.Fatalf("expected 4 correction backspaces, got %d", e.correctionBackspaces)
 	}
 	// Enter submits the composed Vietnamese word.
 	if handled, _ := e.ProcessKeyEvent(IBusKeyReturn, 36, 0); handled {
@@ -120,11 +118,8 @@ func TestAsciiFastPath_VietnameseFlow(t *testing.T) {
 	if e.eng.GetWordBuffer() != "chào" {
 		t.Fatalf("expected buffer 'chào', got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionDeletes != 4 {
-		t.Fatalf("expected 4 surrounding deletions, got %d", e.correctionDeletes)
-	}
-	if e.correctionBackspaces != 0 {
-		t.Fatalf("expected 0 synthetic backspaces on surrounding path, got %d", e.correctionBackspaces)
+	if e.correctionBackspaces != 4 {
+		t.Fatalf("expected 4 correction backspaces, got %d", e.correctionBackspaces)
 	}
 }
 
@@ -154,8 +149,8 @@ func TestAsciiFastPath_MacroForwarded(t *testing.T) {
 	if e.eng.HasBuffer() {
 		t.Fatalf("expected empty buffer after macro, got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionDeletes != 2 {
-		t.Fatalf("expected 2 surrounding deletions for forwarded 'vn', got %d", e.correctionDeletes)
+	if e.correctionBackspaces != 2 {
+		t.Fatalf("expected 2 correction backspaces for forwarded 'vn', got %d", e.correctionBackspaces)
 	}
 }
 
@@ -172,7 +167,11 @@ func TestAsciiFastPath_DisabledByDefault(t *testing.T) {
 	}
 }
 
-func TestAsciiFastPath_SurroundingTextCorrection(t *testing.T) {
+func TestAsciiFastPath_CorrectionUsesBackspaceEvenWithSurrounding(t *testing.T) {
+	// Even when the client advertises surrounding-text (Chrome/Docs do),
+	// erasure must use synthetic BackSpace: several such clients silently
+	// ignore DeleteSurroundingText, leaving the forwarded prefix behind
+	// and duplicating text. BackSpace is an ordinary key event they honor.
 	e := newFastPathEngine()
 	// Simulate a Chrome/GTK client advertising surrounding-text support.
 	e.SetCapabilities(IBusCapSurroundingText)
@@ -187,11 +186,8 @@ func TestAsciiFastPath_SurroundingTextCorrection(t *testing.T) {
 	if e.eng.GetWordBuffer() != "cách" {
 		t.Fatalf("expected buffer 'cách', got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionDeletes != 4 {
-		t.Fatalf("expected 4 surrounding deletions, got %d", e.correctionDeletes)
-	}
-	if e.correctionBackspaces != 0 {
-		t.Fatalf("expected 0 synthetic backspaces, got %d", e.correctionBackspaces)
+	if e.correctionBackspaces != 4 {
+		t.Fatalf("expected 4 correction backspaces, got %d", e.correctionBackspaces)
 	}
 }
 
@@ -213,8 +209,8 @@ func TestAsciiFastPath_TerminalStaysOnLegacyPreedit(t *testing.T) {
 	if e.eng.GetWordBuffer() != "plugin" {
 		t.Fatalf("expected buffer 'plugin', got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionBackspaces != 0 || e.correctionDeletes != 0 {
-		t.Fatalf("expected no correction on legacy path, got bs=%d del=%d", e.correctionBackspaces, e.correctionDeletes)
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected no correction backspaces on legacy path, got %d", e.correctionBackspaces)
 	}
 }
 
@@ -240,8 +236,8 @@ func TestAsciiFastPath_ClaimsSurroundingButNeverPushesStaysLegacy(t *testing.T) 
 	if e.eng.GetWordBuffer() != "plugin" {
 		t.Fatalf("expected buffer 'plugin', got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionBackspaces != 0 || e.correctionDeletes != 0 {
-		t.Fatalf("expected no correction on legacy path, got bs=%d del=%d", e.correctionBackspaces, e.correctionDeletes)
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected no correction backspaces on legacy path, got %d", e.correctionBackspaces)
 	}
 }
 
@@ -265,8 +261,8 @@ func TestAsciiFastPath_TerminalToneStaysInPreeditWithoutErasure(t *testing.T) {
 	if e.eng.GetWordBuffer() != "cách" {
 		t.Fatalf("expected buffer 'cách', got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
-		t.Fatalf("expected no eager erasure, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected no eager erasure backspaces, got %d", e.correctionBackspaces)
 	}
 	if e.forwardedLen != 0 {
 		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
@@ -314,8 +310,8 @@ func TestAsciiFastPath_NoCapsFallsBackToBackspace(t *testing.T) {
 	if e.eng.GetWordBuffer() != "cách" {
 		t.Fatalf("expected buffer 'cách', got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
-		t.Fatalf("expected no eager correction, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected no eager correction backspaces, got %d", e.correctionBackspaces)
 	}
 }
 
@@ -337,8 +333,8 @@ func TestAsciiFastPath_CapsFlapMidWordStaysLegacy(t *testing.T) {
 	if e.eng.GetWordBuffer() != "tẻ" {
 		t.Fatalf("expected buffer 'tẻ', got %q", e.eng.GetWordBuffer())
 	}
-	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
-		t.Fatalf("expected no eager erasure, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected no eager erasure backspaces, got %d", e.correctionBackspaces)
 	}
 	if e.forwardedLen != 0 {
 		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
@@ -347,7 +343,7 @@ func TestAsciiFastPath_CapsFlapMidWordStaysLegacy(t *testing.T) {
 
 func TestAsciiFastPath_CapsLostMidWordUsesLiveCaps(t *testing.T) {
 	// Word starts fast (caps present), caps drop before the tone key:
-	// the erasure mechanism follows the live caps (BackSpace fallback).
+	// erasure always uses synthetic BackSpace, so it still lands.
 	e := newFastPathEngine()
 	typeRunes(e, "te")
 	e.SetCapabilities(0)
@@ -359,9 +355,6 @@ func TestAsciiFastPath_CapsLostMidWordUsesLiveCaps(t *testing.T) {
 	}
 	if e.correctionBackspaces != 2 {
 		t.Fatalf("expected 2 fallback backspaces, got %d", e.correctionBackspaces)
-	}
-	if e.correctionDeletes != 0 {
-		t.Fatalf("expected 0 surrounding deletions, got %d", e.correctionDeletes)
 	}
 }
 
@@ -481,8 +474,8 @@ func TestAsciiFastPath_VNIDigitStartStaysLegacy(t *testing.T) {
 	if e.forwardedLen != 0 {
 		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
 	}
-	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
-		t.Fatalf("expected no correction, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected no correction backspaces, got %d", e.correctionBackspaces)
 	}
 }
 
@@ -578,8 +571,8 @@ func TestFastPathBlocklist_BlockedAppStaysLegacy(t *testing.T) {
 	if e.forwardedLen != 0 {
 		t.Fatalf("expected forwardedLen 0, got %d", e.forwardedLen)
 	}
-	if e.correctionDeletes != 0 || e.correctionBackspaces != 0 {
-		t.Fatalf("expected no correction, got del=%d bs=%d", e.correctionDeletes, e.correctionBackspaces)
+	if e.correctionBackspaces != 0 {
+		t.Fatalf("expected no correction backspaces, got %d", e.correctionBackspaces)
 	}
 }
 
